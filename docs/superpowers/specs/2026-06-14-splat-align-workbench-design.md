@@ -2,17 +2,25 @@
 
 ## Goal
 
-Build a public browser app for aligning two Gaussian splats by manually matching shared landmarks. The app should solve the missing workflow between automatic registration tools that fail on hard scenes and manual transform editing in general-purpose splat editors.
+Build a public browser app for aligning two Gaussian splats by manually matching shared landmarks. The app should productize a focused standalone workflow between automatic registration tools that fail on hard scenes and manual transform editing in general-purpose splat editors.
 
 ## Positioning
 
-Splat Align Workbench is not a replacement for SuperSplat. It focuses on one missing feature:
+Splat Align Workbench is not a replacement for SuperSplat. It focuses on one workflow:
 
 ```text
 Load two splats, identify matching real-world points, compute alignment, preview, export.
 ```
 
 The app should feel like a focused workbench, not a full editor. SuperSplat remains the place for rich editing, cleanup, publishing, and broader scene manipulation.
+
+Prior art / reference:
+
+```text
+VFX-Soup/supersplat-snap
+```
+
+`supersplat-snap` is a MIT-licensed SuperSplat patch that supports multi-splat point correspondences and Umeyama alignment inside a local SuperSplat checkout. This project differentiates with a hosted/local-first standalone UX, two independent inspection panels, session/export artifacts, analytics, and an opt-in training-data roadmap.
 
 ## Architecture
 
@@ -76,7 +84,7 @@ Three pairs are the minimum for a 3D similarity transform. More pairs improve th
 
 ## Alignment Math
 
-Use a pure TypeScript Sim(3) solver based on Umeyama/Kabsch-style best-fit alignment:
+Use a pure TypeScript Sim(3) solver based on SVD/Kabsch/Umeyama best-fit alignment:
 
 ```text
 input: source landmark positions, target landmark positions
@@ -84,7 +92,7 @@ output: scale, rotation matrix/quaternion, translation, residuals
 mapping: aligned = scale * rotation * source + translation
 ```
 
-The solver must be unit tested with known transforms, noisy points, degenerate collinear points, and mismatched pair counts.
+The solver must be unit tested with known transforms, noisy points, scale differences, residual calculation, degenerate collinear points, coplanar warnings, and mismatched pair counts.
 
 ## Preview And Export
 

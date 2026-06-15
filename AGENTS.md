@@ -12,6 +12,14 @@ Core promise:
 Align two Gaussian splats by matching real-world landmarks.
 ```
 
+Prior art / reference:
+
+```text
+VFX-Soup/supersplat-snap
+```
+
+`supersplat-snap` is a MIT-licensed SuperSplat patch that adds point-correspondence alignment inside a local SuperSplat checkout. This project must not claim to be the first point-correspondence splat alignment tool. The product moat is the standalone public site, split-view workflow, local-first privacy boundary, explicit session/export layer, analytics, and opt-in training-data roadmap.
+
 MVP workflow:
 
 ```text
@@ -33,6 +41,7 @@ Download aligned source and session JSON
 - Export aligned source before attempting fused or deduped merge.
 - Prefer SuperSplat/PlayCanvas-quality browser rendering primitives over native rendering.
 - Keep the tool narrow: alignment, confidence, preview, export.
+- Use a real SVD/Kabsch/Umeyama similarity solve. Do not ship the earlier approximate three-point basis solver as the final core solver.
 
 ## Data Boundaries
 

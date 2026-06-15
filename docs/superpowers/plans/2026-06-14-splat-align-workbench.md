@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a first working browser app that loads two local splat files, lets a user mark matching landmarks, computes a source-to-target transform, previews alignment, and exports session/transform artifacts.
+**Goal:** Build a first working standalone browser app that loads two local splat files, lets a user mark matching landmarks, computes a source-to-target transform, previews alignment, and exports session/transform artifacts.
 
-**Architecture:** Fresh TypeScript web app with a renderer spike first. Core math, landmarks, analytics, file handling, and export stay isolated from the UI so renderer choices can change without rewriting the product workflow.
+**Architecture:** Fresh TypeScript web app with a renderer spike first. Core math, landmarks, analytics, file handling, and export stay isolated from the UI so renderer choices can change without rewriting the product workflow. `VFX-Soup/supersplat-snap` is prior art/reference for point-correspondence alignment inside SuperSplat; this app differentiates through standalone split-view workflow, session/export artifacts, analytics, and the training-data roadmap.
 
 **Tech Stack:** TypeScript, Vite, PlayCanvas/SuperSplat rendering primitives if feasible, Vitest for pure modules, browser File API, local-only processing, analytics adapter abstraction.
 
@@ -44,7 +44,7 @@ Responsibilities:
 
 ```text
 src/domain/sim3.ts
-  pure similarity-transform solver and residual calculation
+  pure SVD/Kabsch/Umeyama similarity-transform solver and residual calculation
 
 src/domain/landmarks.ts
   landmark pair model, validation, add/update/remove/disable helpers
@@ -279,6 +279,8 @@ git commit -m "chore: scaffold splat align workbench"
 ```
 
 ## Task 2: Sim(3) Solver
+
+Prior art note: implement the solver as a tested pure module. `supersplat-snap` also uses Umeyama; do not copy its UI shape or rely on SuperSplat Scene Manager interaction.
 
 **Files:**
 - Create: `src/domain/sim3.ts`
