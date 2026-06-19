@@ -74,6 +74,8 @@ describe('solveSim3', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.reason);
+    source.forEach((point, index) => closeVec(applySim3(result.transform, point), target[index]));
+    expect(result.transform.scale).toBeCloseTo(2, 6);
     expect(result.warnings).toContain('coplanar-landmarks');
   });
 
@@ -86,6 +88,26 @@ describe('solveSim3', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected failure');
     expect(result.reason).toContain('collinear');
+  });
+
+  it('keeps scale positive and warns on clustered landmark geometry', () => {
+    const source: Vec3[] = [
+      [2.191101975789722, -0.10069510210091451, 1.5658718745746516],
+      [1.9455571687377549, -0.004775427114834636, 1.4830305173940994],
+      [1.9829640316468697, -0.011875582016809026, 1.5031126050394181]
+    ];
+    const target: Vec3[] = [
+      [1.2354988873755302, 1.7791961192783055, -0.2968952242858536],
+      [1.200834172961698, 1.4565542884409723, -0.16002385146703804],
+      [1.212291551868065, 1.5117002752987956, -0.19507706987855292]
+    ];
+
+    const result = solveSim3(source, target);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.transform.scale).toBeGreaterThan(0);
+    expect(result.warnings).toContain('clustered-landmarks');
   });
 
   it('rejects mismatched counts and fewer than three pairs', () => {

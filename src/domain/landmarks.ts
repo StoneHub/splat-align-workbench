@@ -7,6 +7,7 @@ export interface LandmarkPair {
   target?: Vec3;
   source?: Vec3;
   label?: string;
+  kind?: 'match' | 'join' | 'direction' | 'plane';
   enabled: boolean;
   residual?: number;
   quality: LandmarkQuality;

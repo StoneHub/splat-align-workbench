@@ -1,11 +1,15 @@
-import { bucketBytes, bucketCount, MemoryAnalyticsProvider } from '../analytics/analytics';
-import { completeEnabledPairs, createEmptyPairs, flagResiduals, nextLandmarkId, setLandmarkPoint, toggleLandmark, type LandmarkPair } from '../domain/landmarks';
+import { analyticsErrorCode, bucketBytes, bucketCount, createAnalyticsProvider } from '../analytics/analytics';
+import { canSolveForMode, createPairsForMode, landmarkModeCopy, nextPairForMode, type AlignmentMode } from '../domain/alignmentMode';
+import { completeEnabledPairs, flagResiduals, setLandmarkPoint, toggleLandmark, type LandmarkPair } from '../domain/landmarks';
 import { parsePlyHeader } from '../domain/ply';
-import { createSession, serializeSession } from '../domain/session';
 import { solveSim3, type Sim3Success } from '../domain/sim3';
+import { createSyntheticAlignmentFixture, createSyntheticStitchFixture } from '../devFixtures/syntheticSplat';
 import { makeDownloadBlob, downloadName } from '../export/exportSession';
-import { transformBrushPlyBuffer } from '../export/exportPlyTransform';
-import { loadSplatCloudFromPly, PointCloudViewer, type SplatCloud, type SplatFileStats } from '../rendering/PointCloudViewer';
+import { createMergedSplatPlyBuffer } from '../export/exportPlyTransform';
+import { controlSensitivityLabel, DEFAULT_CONTROL_SENSITIVITY, PlayCanvasSplatViewer, wheelZoomFactor } from '../rendering/PlayCanvasSplatViewer';
+import { loadSplatCloudFromPly, type SplatCloud, type SplatFileStats } from '../rendering/splatData';
+import { createAppMarkup } from './appMarkup';
+import { formatSolveStatus } from './solveFeedback';
 
 interface LoadedSplat {
   role: 'target' | 'source';
@@ -15,7 +19,7 @@ interface LoadedSplat {
   stats: SplatFileStats;
 }
 
-const analytics = new MemoryAnalyticsProvider();
+const analytics = createAnalyticsProvider(import.meta.env.VITE_ANALYTICS_ENDPOINT);
 
 const emptySplatState = () => ({
   target: null as LoadedSplat | null,
@@ -23,72 +27,34 @@ const emptySplatState = () => ({
 });
 
 export function createApp(root: HTMLElement): void {
-  root.innerHTML = `
-    <main class="app-shell">
-      <section class="viewer-panel" data-role="target">
-        <header>
-          <div><strong>Target</strong><span data-file-label="target">No file loaded</span></div>
-          <label class="file-button">Load target<input data-file-input="target" type="file" accept=".ply,.splat" /></label>
-        </header>
-        <canvas class="viewer-surface" data-viewer="target"></canvas>
-      </section>
-      <section class="viewer-panel" data-role="source">
-        <header>
-          <div><strong>Source</strong><span data-file-label="source">No file loaded</span></div>
-          <label class="file-button">Load source<input data-file-input="source" type="file" accept=".ply,.splat" /></label>
-        </header>
-        <canvas class="viewer-surface" data-viewer="source"></canvas>
-      </section>
-      <aside class="side-panel">
-        <div class="brand-row">
-          <h1>Splat Align</h1>
-          <span>local-first</span>
-        </div>
-        <p class="lede">A standalone landmark workbench. Files stay in your browser; usage events track workflow health without uploading splats.</p>
-        <div class="toolbar-row">
-          <button data-action="add-pair" type="button">Add Pair</button>
-          <button data-action="solve" type="button" disabled>Preview Alignment</button>
-        </div>
-        <div class="status-card" data-status>Load target and source splats to begin.</div>
-        <div class="landmark-list" data-landmarks></div>
-        <div class="export-row">
-          <button data-action="export-transform" type="button" disabled>Transform JSON</button>
-          <button data-action="export-session" type="button" disabled>Session JSON</button>
-          <button data-action="export-ply" type="button" disabled>Aligned PLY</button>
-        </div>
-        <details>
-          <summary>Prior art note</summary>
-          <p><code>supersplat-snap</code> validates point-correspondence alignment inside SuperSplat. This app focuses on hosted split-view workflow, session export, and a training-data path.</p>
-        </details>
-      </aside>
-      <section class="overlay-panel">
-        <header><strong>Overlay Preview</strong><span data-overlay-label>Needs 3 matching pairs</span></header>
-        <canvas class="viewer-surface" data-viewer="overlay"></canvas>
-      </section>
-    </main>
-  `;
+  root.innerHTML = createAppMarkup();
 
   analytics.track('session_started', { localFilesOnly: true });
 
   const state = emptySplatState();
-  let pairs: LandmarkPair[] = createEmptyPairs();
+  let mode: AlignmentMode = 'overlap';
+  let pairs: LandmarkPair[] = createPairsForMode(mode);
   let activePairId = 'A';
   let activeSide: 'target' | 'source' = 'target';
   let alignment: Sim3Success | null = null;
 
-  const targetViewer = new PointCloudViewer(root.querySelector('[data-viewer="target"]') as HTMLCanvasElement);
-  const sourceViewer = new PointCloudViewer(root.querySelector('[data-viewer="source"]') as HTMLCanvasElement);
-  const overlayViewer = new PointCloudViewer(root.querySelector('[data-viewer="overlay"]') as HTMLCanvasElement);
+  const targetViewer = new PlayCanvasSplatViewer(root.querySelector('[data-viewer="target"]') as HTMLCanvasElement);
+  const sourceViewer = new PlayCanvasSplatViewer(root.querySelector('[data-viewer="source"]') as HTMLCanvasElement);
+  const overlayViewer = new PlayCanvasSplatViewer(root.querySelector('[data-viewer="overlay"]') as HTMLCanvasElement);
+  const viewers = { target: targetViewer, source: sourceViewer, overlay: overlayViewer };
+  let controlSensitivity = DEFAULT_CONTROL_SENSITIVITY;
+
+  const setControlSensitivity = (value: number) => {
+    controlSensitivity = value;
+    Object.values(viewers).forEach(viewer => viewer.setControlSensitivity(value));
+    (root.querySelector('[data-control-sensitivity-label]') as HTMLOutputElement).value = controlSensitivityLabel(value);
+  };
 
   const setStatus = (message: string) => {
     (root.querySelector('[data-status]') as HTMLElement).textContent = message;
   };
 
-  const safeStats = (loaded: LoadedSplat | null) => loaded ? {
-    fileType: loaded.stats.fileType,
-    sizeBucket: bucketBytes(loaded.stats.sizeBytes),
-    splatCountBucket: bucketCount(loaded.stats.vertexCount)
-  } : {};
+  const currentCopy = () => landmarkModeCopy(mode);
 
   const download = (name: string, blob: Blob) => {
     const url = URL.createObjectURL(blob);
@@ -102,67 +68,115 @@ export function createApp(root: HTMLElement): void {
   const recompute = () => {
     const complete = completeEnabledPairs(pairs);
     alignment = null;
-    if (complete.length >= 3) {
+    if (canSolveForMode(mode, pairs)) {
       const result = solveSim3(complete.map(pair => pair.source), complete.map(pair => pair.target));
-      analytics.track('solve_attempted', { pairCount: complete.length, ok: result.ok });
+      analytics.track('solve_attempted', { mode, pairCount: complete.length, ok: result.ok });
       if (result.ok) {
         alignment = result;
         const residualMap = Object.fromEntries(complete.map((pair, index) => [pair.id, result.residuals[index]]));
         const threshold = Math.max(0.05, result.rmse * 2.5);
         pairs = flagResiduals(pairs, residualMap, threshold);
-        overlayViewer.setOverlay(state.target?.cloud ?? null, state.source?.cloud ?? null, result.transform);
-        setStatus(`${complete.length} pairs solved. RMSE ${result.rmse.toFixed(4)}${result.warnings.length ? ` · ${result.warnings.join(', ')}` : ''}`);
-        analytics.track('alignment_previewed', { pairCount: complete.length, rmseBucket: result.rmse < 0.05 ? '<0.05' : result.rmse < 0.5 ? '0.05-0.5' : '0.5+' });
+        void overlayViewer.setOverlay(
+          state.target ? { name: state.target.displayName, buffer: state.target.buffer, cloud: state.target.cloud, role: 'target' } : null,
+          state.source ? { name: state.source.displayName, buffer: state.source.buffer, cloud: state.source.cloud, role: 'source' } : null,
+          result.transform
+        ).catch(error => setStatus(error instanceof Error ? error.message : String(error)));
+        setStatus(formatSolveStatus(complete.length, result.rmse, result.warnings));
+        analytics.track('alignment_previewed', { mode, pairCount: complete.length, rmseBucket: result.rmse < 0.05 ? '<0.05' : result.rmse < 0.5 ? '0.05-0.5' : '0.5+' });
       } else {
-        overlayViewer.setOverlay(state.target?.cloud ?? null, null);
+        void overlayViewer.setOverlay(
+          state.target ? { name: state.target.displayName, buffer: state.target.buffer, cloud: state.target.cloud, role: 'target' } : null,
+          null
+        ).catch(error => setStatus(error instanceof Error ? error.message : String(error)));
         setStatus(result.reason);
       }
     } else {
-      overlayViewer.setOverlay(state.target?.cloud ?? null, null);
-      setStatus(state.target && state.source ? `${complete.length}/3 complete pairs. Add matching target/source landmarks.` : 'Load target and source splats to begin.');
+      void overlayViewer.setOverlay(
+        state.target ? { name: state.target.displayName, buffer: state.target.buffer, cloud: state.target.cloud, role: 'target' } : null,
+        null
+      ).catch(error => setStatus(error instanceof Error ? error.message : String(error)));
+      const incompleteStatus = mode === 'overlap'
+        ? `${complete.length}/3 complete pairs. ${currentCopy().incompleteText}`
+        : currentCopy().incompleteText;
+      setStatus(state.target && state.source ? incompleteStatus : 'Load target and source splats to begin.');
     }
     renderLandmarks();
     updateButtons();
   };
 
   const updateButtons = () => {
-    const canSolve = completeEnabledPairs(pairs).length >= 3;
     const hasAlignment = Boolean(alignment);
-    (root.querySelector('[data-action="solve"]') as HTMLButtonElement).disabled = !canSolve;
-    (root.querySelector('[data-action="export-transform"]') as HTMLButtonElement).disabled = !hasAlignment;
-    (root.querySelector('[data-action="export-session"]') as HTMLButtonElement).disabled = !state.target || !state.source;
-    (root.querySelector('[data-action="export-ply"]') as HTMLButtonElement).disabled = !hasAlignment || !state.source;
-    (root.querySelector('[data-overlay-label]') as HTMLElement).textContent = hasAlignment ? 'Target + aligned source' : 'Needs 3 matching pairs';
+    (root.querySelector('[data-action="export-ply"]') as HTMLButtonElement).disabled = !hasAlignment || !state.target || !state.source;
+    (root.querySelector('[data-overlay-label]') as HTMLElement).textContent = hasAlignment ? currentCopy().solvedText : currentCopy().needsText;
+  };
+
+  const updateModeChrome = () => {
+    const copy = currentCopy();
+    (root.querySelector('[data-mode-lede]') as HTMLElement).textContent = copy.lede;
+    (root.querySelector('[data-landmark-toolbar] strong') as HTMLElement).textContent = copy.toolbarTitle;
+    root.querySelectorAll<HTMLButtonElement>('[data-alignment-mode]').forEach(button => {
+      const active = button.dataset.alignmentMode === mode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
   };
 
   const renderLandmarks = () => {
     const list = root.querySelector('[data-landmarks]') as HTMLElement;
     list.innerHTML = pairs.map(pair => {
       const active = pair.id === activePairId;
+      const label = pair.label ?? 'Match point';
       const target = pair.target ? pair.target.map(value => value.toFixed(3)).join(', ') : 'pick';
       const source = pair.source ? pair.source.map(value => value.toFixed(3)).join(', ') : 'pick';
       const residual = pair.residual === undefined ? '' : `<span class="residual ${pair.quality === 'outlier' ? 'bad' : ''}">${pair.residual.toFixed(4)}</span>`;
+      const targetPickClass = active && activeSide === 'target' ? ' class="armed-pick"' : '';
+      const sourcePickClass = active && activeSide === 'source' ? ' class="armed-pick"' : '';
       return `
         <div class="landmark-row ${active ? 'active' : ''}" data-pair="${pair.id}">
           <button type="button" data-select-pair="${pair.id}">${pair.id}</button>
           <label><input type="checkbox" data-toggle-pair="${pair.id}" ${pair.enabled ? 'checked' : ''} /> enabled</label>
-          <button type="button" data-pick-side="target" data-pair-id="${pair.id}">Target: ${target}</button>
-          <button type="button" data-pick-side="source" data-pair-id="${pair.id}">Source: ${source}</button>
+          <span class="constraint-label">${label}</span>
+          <button type="button" data-pick-side="target" data-pair-id="${pair.id}"${targetPickClass}>Target: ${target}</button>
+          <button type="button" data-pick-side="source" data-pair-id="${pair.id}"${sourcePickClass}>Source: ${source}</button>
           ${residual}
         </div>
       `;
     }).join('');
   };
 
+  const armPick = (side: 'target' | 'source', pairId = activePairId) => {
+    activePairId = pairId;
+    activeSide = side;
+    targetViewer.setPickMode(side === 'target');
+    sourceViewer.setPickMode(side === 'source');
+    renderLandmarks();
+    const label = pairs.find(pair => pair.id === pairId)?.label ?? pairId;
+    setStatus(`Click a point in the ${side} viewer for ${label}.`);
+  };
+
+  const disarmPick = () => {
+    targetViewer.setPickMode(false);
+    sourceViewer.setPickMode(false);
+  };
+
   const handlePick = (side: 'target' | 'source', point: [number, number, number]) => {
     pairs = setLandmarkPoint(pairs, activePairId, side, point);
+    const pickedPair = activePairId;
     activeSide = side === 'target' ? 'source' : 'target';
     analytics.track('landmark_pair_set', { side, pairId: activePairId });
     recompute();
+    if (side === 'target') {
+      armPick('source', pickedPair);
+    } else {
+      disarmPick();
+      setStatus(`${pairs.find(pair => pair.id === pickedPair)?.label ?? `Landmark ${pickedPair}`} source point set. ${currentCopy().sourceCompleteText}`);
+    }
   };
 
   targetViewer.setPickHandler(point => handlePick('target', point));
   sourceViewer.setPickHandler(point => handlePick('source', point));
+  targetViewer.setPickMissHandler(() => setStatus(`No target splat point under click for landmark ${activePairId}. Try zooming closer or click denser splat detail.`));
+  sourceViewer.setPickMissHandler(() => setStatus(`No source splat point under click for landmark ${activePairId}. Try zooming closer or click denser splat detail.`));
 
   const loadFile = async (role: 'target' | 'source', file: File) => {
     const buffer = await file.arrayBuffer();
@@ -176,8 +190,9 @@ export function createApp(root: HTMLElement): void {
       stats: { fileType: file.name.split('.').pop()?.toLowerCase() ?? 'unknown', sizeBytes: file.size, vertexCount: header.vertexCount }
     };
     state[role] = loaded;
-    if (role === 'target') targetViewer.setLayer(cloud, 'target');
-    else sourceViewer.setLayer(cloud, 'source');
+    const renderInput = { name: file.name, buffer, cloud, role };
+    if (role === 'target') await targetViewer.setLayer(renderInput);
+    else await sourceViewer.setLayer(renderInput);
     (root.querySelector(`[data-file-label="${role}"]`) as HTMLElement).textContent = `${file.name} · ${header.vertexCount.toLocaleString()} splats`;
     analytics.track('file_loaded', {
       role,
@@ -186,6 +201,29 @@ export function createApp(root: HTMLElement): void {
       splatCountBucket: bucketCount(header.vertexCount)
     });
     recompute();
+  };
+
+  const loadSyntheticFixture = async () => {
+    const fixture = mode === 'stitch' ? createSyntheticStitchFixture() : createSyntheticAlignmentFixture();
+    await loadFile('target', new File([fixture.files.target.buffer], fixture.files.target.name, { type: fixture.files.target.mimeType }));
+    await loadFile('source', new File([fixture.files.source.buffer], fixture.files.source.name, { type: fixture.files.source.mimeType }));
+    pairs = fixture.manifest.landmarks.map(landmark => {
+      const stitchConstraint = fixture.manifest.stitch?.constraints.find(constraint => constraint.id === landmark.id);
+      return {
+        id: landmark.id,
+        label: stitchConstraint?.label ?? 'Match point',
+        kind: stitchConstraint?.kind ?? landmark.kind ?? 'match',
+        enabled: true,
+        quality: 'unset'
+      };
+    });
+    activePairId = pairs[0]?.id ?? 'A';
+    activeSide = 'target';
+    alignment = null;
+    disarmPick();
+    recompute();
+    analytics.track('fixture_loaded', { type: fixture.manifest.fixtureName, mode, landmarkCount: fixture.manifest.landmarks.length });
+    setStatus(currentCopy().syntheticLoadedText);
   };
 
   root.querySelectorAll<HTMLInputElement>('[data-file-input]').forEach(input => {
@@ -197,10 +235,14 @@ export function createApp(root: HTMLElement): void {
         await loadFile(role, file);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        analytics.track('error_reported', { area: 'file_load', message });
+        analytics.track('error_reported', { area: 'file_load', code: analyticsErrorCode(error), message });
         setStatus(message);
       }
     });
+  });
+
+  root.querySelector<HTMLInputElement>('[data-control-sensitivity]')?.addEventListener('input', event => {
+    setControlSensitivity(Number((event.target as HTMLInputElement).value));
   });
 
   root.addEventListener('click', event => {
@@ -209,53 +251,66 @@ export function createApp(root: HTMLElement): void {
     const pickSide = target.closest<HTMLElement>('[data-pick-side]');
     const toggle = target.closest<HTMLInputElement>('[data-toggle-pair]');
     const action = target.closest<HTMLButtonElement>('[data-action]');
+    const modeAction = target.closest<HTMLButtonElement>('[data-alignment-mode]');
+    const viewAction = target.closest<HTMLButtonElement>('[data-view-action]');
 
+    if (modeAction) {
+      mode = modeAction.dataset.alignmentMode as AlignmentMode;
+      pairs = createPairsForMode(mode);
+      activePairId = pairs[0]?.id ?? 'A';
+      activeSide = 'target';
+      alignment = null;
+      disarmPick();
+      updateModeChrome();
+      recompute();
+      analytics.track('alignment_mode_changed', { mode });
+      return;
+    }
     if (selectPair) {
       activePairId = selectPair.dataset.selectPair as string;
       renderLandmarks();
     }
     if (pickSide) {
-      activePairId = pickSide.dataset.pairId as string;
-      activeSide = pickSide.dataset.pickSide as 'target' | 'source';
-      renderLandmarks();
-      setStatus(`Click a point in the ${activeSide} viewer for landmark ${activePairId}.`);
+      armPick(pickSide.dataset.pickSide as 'target' | 'source', pickSide.dataset.pairId as string);
     }
     if (toggle) {
       pairs = toggleLandmark(pairs, toggle.dataset.togglePair as string, toggle.checked);
       recompute();
     }
     if (action?.dataset.action === 'add-pair') {
-      const id = nextLandmarkId(pairs);
-      pairs = [...pairs, { id, enabled: true, quality: 'unset' }];
-      activePairId = id;
+      const next = nextPairForMode(mode, pairs);
+      pairs = [...pairs, next];
+      activePairId = next.id;
       renderLandmarks();
     }
-    if (action?.dataset.action === 'solve') {
-      recompute();
-    }
-    if (action?.dataset.action === 'export-transform' && alignment) {
-      download(downloadName('splat-align-transform', new Date().toISOString(), 'json'), makeDownloadBlob(`${JSON.stringify(alignment.transform, null, 2)}\n`, 'application/json'));
-      analytics.track('export_completed', { type: 'transform' });
-    }
-    if (action?.dataset.action === 'export-session') {
-      const session = createSession({
-        target: safeStats(state.target),
-        source: safeStats(state.source),
-        landmarks: pairs,
-        transform: alignment?.transform,
-        rmse: alignment?.rmse,
-        warnings: alignment?.warnings
+    if (action?.dataset.action === 'load-synthetic') {
+      void loadSyntheticFixture().catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        analytics.track('error_reported', { area: 'fixture_load', code: analyticsErrorCode(error), message });
+        setStatus(message);
       });
-      download(downloadName('splat-align-session', session.createdAt, 'json'), makeDownloadBlob(serializeSession(session), 'application/json'));
-      analytics.track('export_completed', { type: 'session' });
     }
-    if (action?.dataset.action === 'export-ply' && alignment && state.source) {
-      const transformed = transformBrushPlyBuffer(state.source.buffer, alignment.transform);
-      download(downloadName('aligned-source', new Date().toISOString(), 'ply'), makeDownloadBlob(transformed, 'application/octet-stream'));
-      analytics.track('export_completed', { type: 'aligned-ply' });
+    if (action?.dataset.action === 'export-ply' && alignment && state.target && state.source) {
+      try {
+        const merged = createMergedSplatPlyBuffer(state.target.buffer, state.source.buffer, alignment.transform);
+        download(downloadName('merged-splats', new Date().toISOString(), 'ply'), makeDownloadBlob(merged, 'application/octet-stream'));
+        analytics.track('export_completed', { type: 'merged-ply' });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        analytics.track('error_reported', { area: 'export', code: analyticsErrorCode(error), message });
+        setStatus(message);
+      }
+    }
+    if (viewAction) {
+      const viewer = viewers[viewAction.dataset.viewTarget as keyof typeof viewers];
+      if (viewAction.dataset.viewAction === 'reset') viewer.resetView();
+      if (viewAction.dataset.viewAction === 'zoom-in') viewer.zoomBy(wheelZoomFactor(-1, controlSensitivity));
+      if (viewAction.dataset.viewAction === 'zoom-out') viewer.zoomBy(wheelZoomFactor(1, controlSensitivity));
     }
   });
 
+  setControlSensitivity(controlSensitivity);
+  updateModeChrome();
   renderLandmarks();
   updateButtons();
 }

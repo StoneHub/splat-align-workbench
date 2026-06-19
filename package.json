@@ -3,13 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
+    "dev:checked": "node scripts/start-dev-server.mjs",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "playcanvas": "^2.19.7",
     "vite": "^7.0.0"
   },
   "devDependencies": {

@@ -35,6 +35,25 @@ const normalizeQuaternion = (q: Quaternion): Quaternion => {
 
 const propertyIndex = (properties: string[], name: string): number => properties.indexOf(name);
 
+const vertexStride = (properties: string[]): number => properties.length * 4;
+
+const vertexBody = (buffer: ArrayBuffer, header: ReturnType<typeof parsePlyHeader>): Uint8Array => {
+  const stride = vertexStride(header.properties);
+  return new Uint8Array(buffer, header.headerByteLength, header.vertexCount * stride);
+};
+
+const combinedHeader = (headerText: string, vertexCount: number): Uint8Array => {
+  const lines = headerText.trimEnd().split(/\r?\n/);
+  const nextLines: string[] = [];
+  for (const line of lines) {
+    nextLines.push(line.startsWith('element vertex ') ? `element vertex ${vertexCount}` : line);
+    if (line.startsWith('format ')) {
+      nextLines.push('comment splat-align-workbench merged target plus aligned source');
+    }
+  }
+  return new TextEncoder().encode(`${nextLines.join('\n')}\n`);
+};
+
 export function transformBrushPlyBuffer(buffer: ArrayBuffer, transform: Sim3Transform): ArrayBuffer {
   const header = parsePlyHeader(buffer);
   if (header.format !== 'binary_little_endian') {
@@ -82,4 +101,25 @@ export function transformBrushPlyBuffer(buffer: ArrayBuffer, transform: Sim3Tran
   }
 
   return bytes.buffer;
+}
+
+export function createMergedSplatPlyBuffer(targetBuffer: ArrayBuffer, sourceBuffer: ArrayBuffer, transform: Sim3Transform): ArrayBuffer {
+  const targetHeader = parsePlyHeader(targetBuffer);
+  const sourceHeader = parsePlyHeader(sourceBuffer);
+  if (targetHeader.format !== 'binary_little_endian' || sourceHeader.format !== 'binary_little_endian') {
+    throw new Error('Only binary_little_endian PLY export is supported in the MVP');
+  }
+  if (targetHeader.properties.join('\n') !== sourceHeader.properties.join('\n')) {
+    throw new Error('Combined preview export requires target and source PLY files with matching vertex properties');
+  }
+
+  const transformedSource = transformBrushPlyBuffer(sourceBuffer, transform);
+  const header = combinedHeader(targetHeader.headerText, targetHeader.vertexCount + sourceHeader.vertexCount);
+  const targetBody = vertexBody(targetBuffer, targetHeader);
+  const sourceBody = vertexBody(transformedSource, sourceHeader);
+  const output = new Uint8Array(header.byteLength + targetBody.byteLength + sourceBody.byteLength);
+  output.set(header, 0);
+  output.set(targetBody, header.byteLength);
+  output.set(sourceBody, header.byteLength + targetBody.byteLength);
+  return output.buffer;
 }

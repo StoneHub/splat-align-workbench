@@ -1,13 +1,27 @@
 import type { LandmarkPair } from './landmarks';
 import type { Sim3Transform } from './sim3';
 
+export interface AppAttribution {
+  appName: string;
+  appUrl: string;
+  author: string;
+  site: string;
+}
+
+export const APP_ATTRIBUTION: AppAttribution = {
+  appName: 'Splat Align Workbench',
+  appUrl: 'https://merge.monroes.space',
+  author: 'Monroe Stone',
+  site: 'https://monroes.space'
+};
+
 export interface SplatStats {
   fileType?: string;
   sizeBucket?: string;
   splatCountBucket?: string;
 }
 
-export interface AlignmentSession {
+export interface AlignmentSession extends AppAttribution {
   version: 1;
   createdAt: string;
   target: SplatStats;
@@ -30,6 +44,7 @@ export interface CreateSessionInput {
 
 export function createSession(input: CreateSessionInput): AlignmentSession {
   return {
+    ...APP_ATTRIBUTION,
     version: 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
     target: input.target,

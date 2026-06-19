@@ -29,7 +29,7 @@ Navigate both splats independently
 Pick 3+ matching landmark pairs
 Compute source -> target similarity transform
 Preview aligned overlay
-Download aligned source and session JSON
+Download merged PLY and session JSON
 ```
 
 ## Product Principles
@@ -38,7 +38,7 @@ Download aligned source and session JSON
 - Product usage analytics are intentional from day one.
 - Training-data contribution is opt-in and separate from usage analytics.
 - Do not add manual move/rotate/scale controls to the MVP. The point is to avoid manual transform work.
-- Export aligned source before attempting fused or deduped merge.
+- Export a merged target-plus-aligned-source PLY as the primary artifact.
 - Prefer SuperSplat/PlayCanvas-quality browser rendering primitives over native rendering.
 - Keep the tool narrow: alignment, confidence, preview, export.
 - Use a real SVD/Kabsch/Umeyama similarity solve. Do not ship the earlier approximate three-point basis solver as the final core solver.

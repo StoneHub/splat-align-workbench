@@ -25,7 +25,8 @@ input {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 340px;
   grid-template-rows: minmax(0, 1fr) 300px;
   gap: 10px;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   padding: 10px;
   background:
     linear-gradient(180deg, rgba(88, 166, 255, 0.05), transparent 26%),
@@ -40,6 +41,13 @@ input {
   border-radius: 8px;
   background: #161b22;
   overflow: hidden;
+}
+
+.viewer-panel,
+.overlay-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .overlay-panel {
@@ -64,8 +72,7 @@ input {
   border-bottom: 1px solid #30363d;
 }
 
-.viewer-panel header div,
-.overlay-panel header div {
+.viewer-panel header > div:first-child {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -90,9 +97,26 @@ input {
 
 .viewer-surface {
   width: 100%;
-  height: calc(100% - 46px);
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
   display: block;
+  cursor: grab;
+  outline: none;
+}
+
+.viewer-surface.pick-mode {
   cursor: crosshair;
+  box-shadow: inset 0 0 0 2px #7ee787;
+}
+
+.viewer-surface:active {
+  cursor: grabbing;
+}
+
+.viewer-surface:focus-visible {
+  box-shadow: inset 0 0 0 2px #58a6ff;
 }
 
 .file-button,
@@ -121,6 +145,32 @@ button:disabled {
   opacity: 0.45;
 }
 
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.viewer-actions button,
+.viewer-actions .file-button {
+  min-height: 28px;
+  padding: 6px 8px;
+}
+
+.viewer-actions button[data-view-action="zoom-in"],
+.viewer-actions button[data-view-action="zoom-out"] {
+  width: 28px;
+  padding: 6px 0;
+}
+
+.armed-pick {
+  border-color: #7ee787;
+  color: #f0fff4;
+  box-shadow: inset 0 0 0 1px rgba(126, 231, 135, 0.45);
+}
+
 .brand-row {
   display: flex;
   align-items: center;
@@ -134,13 +184,6 @@ h1 {
   letter-spacing: 0;
 }
 
-.brand-row span {
-  color: #7ee787;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
 .lede {
   margin: 10px 0 14px;
   color: #8b949e;
@@ -148,12 +191,54 @@ h1 {
   line-height: 1.45;
 }
 
-.toolbar-row,
+.mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mode-row button.active {
+  border-color: #58a6ff;
+  background: #1f6feb;
+  color: #fff;
+}
+
+.fixture-row,
 .export-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.fixture-row {
+  grid-template-columns: 1fr;
+}
+
+.control-row {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.control-row label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #c9d1d9;
+  font-size: 12px;
+}
+
+.control-row output {
+  color: #7ee787;
+  font-variant-numeric: tabular-nums;
+}
+
+.control-row input[type="range"] {
+  width: 100%;
+  accent-color: #58a6ff;
 }
 
 .export-row {
@@ -171,6 +256,27 @@ h1 {
   margin-bottom: 10px;
 }
 
+.landmark-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.landmark-toolbar strong {
+  color: #f0f6fc;
+  font-size: 13px;
+}
+
+.landmark-toolbar button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
 .landmark-list {
   display: flex;
   flex-direction: column;
@@ -180,7 +286,7 @@ h1 {
 
 .landmark-row {
   display: grid;
-  grid-template-columns: 34px 72px 1fr 1fr;
+  grid-template-columns: 34px 70px minmax(78px, 0.9fr) 1fr 1fr;
   gap: 6px;
   align-items: center;
   border: 1px solid #30363d;
@@ -196,6 +302,12 @@ h1 {
 .landmark-row label {
   color: #8b949e;
   font-size: 11px;
+}
+
+.constraint-label {
+  color: #c9d1d9;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .landmark-row button {

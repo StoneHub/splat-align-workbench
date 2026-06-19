@@ -52,6 +52,18 @@ const covariance = (points: Vec3[]): Mat3 => {
   return cov;
 };
 
+const clusteredWarnings = (points: Vec3[]): string[] => {
+  const distances: number[] = [];
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      distances.push(normVec3(subVec3(points[i], points[j])));
+    }
+  }
+  const max = Math.max(...distances);
+  const min = Math.min(...distances.filter(distance => distance > EPSILON));
+  return Number.isFinite(min) && max > EPSILON && min / max < 0.2 ? ['clustered-landmarks'] : [];
+};
+
 const eigenvaluesSymmetric3 = (input: Mat3): number[] => {
   const a = input.map(row => [...row]) as Mat3;
 
@@ -108,25 +120,73 @@ const rankWarnings = (source: Vec3[]): { ok: true; warnings: string[] } | { ok: 
     return { ok: false, reason: 'source landmarks are collinear' };
   }
   if ((eigenvalues[2] ?? 0) / max < 1e-7) {
-    return { ok: true, warnings: ['coplanar-landmarks'] };
+    return { ok: true, warnings: ['coplanar-landmarks', ...clusteredWarnings(source)] };
   }
-  return { ok: true, warnings: [] };
+  return { ok: true, warnings: clusteredWarnings(source) };
 };
 
 const dominantEigenvector4 = (matrix: number[][]): [number, number, number, number] => {
-  let vector = [1, 0, 0, 0];
-  for (let iteration = 0; iteration < 240; iteration += 1) {
-    const next = [0, 0, 0, 0];
+  const a = matrix.map(row => [...row]);
+  const eigenvectors = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1]
+  ];
+
+  for (let iteration = 0; iteration < 96; iteration += 1) {
+    let p = 0;
+    let q = 1;
+    let max = Math.abs(a[p][q]);
     for (let row = 0; row < 4; row += 1) {
-      for (let col = 0; col < 4; col += 1) {
-        next[row] += matrix[row][col] * vector[col];
+      for (let col = row + 1; col < 4; col += 1) {
+        const value = Math.abs(a[row][col]);
+        if (value > max) {
+          max = value;
+          p = row;
+          q = col;
+        }
       }
     }
-    const length = Math.hypot(next[0], next[1], next[2], next[3]);
-    if (length < EPSILON) break;
-    vector = next.map(value => value / length);
+    if (max < 1e-12) break;
+
+    const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+    const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+    const c = 1 / Math.sqrt(t * t + 1);
+    const s = t * c;
+    const app = a[p][p];
+    const aqq = a[q][q];
+    const apq = a[p][q];
+
+    a[p][p] = c * c * app - 2 * s * c * apq + s * s * aqq;
+    a[q][q] = s * s * app + 2 * s * c * apq + c * c * aqq;
+    a[p][q] = 0;
+    a[q][p] = 0;
+
+    for (let i = 0; i < 4; i += 1) {
+      if (i !== p && i !== q) {
+        const aip = a[i][p];
+        const aiq = a[i][q];
+        a[i][p] = c * aip - s * aiq;
+        a[p][i] = a[i][p];
+        a[i][q] = s * aip + c * aiq;
+        a[q][i] = a[i][q];
+      }
+
+      const vip = eigenvectors[i][p];
+      const viq = eigenvectors[i][q];
+      eigenvectors[i][p] = c * vip - s * viq;
+      eigenvectors[i][q] = s * vip + c * viq;
+    }
   }
-  return [vector[0], vector[1], vector[2], vector[3]];
+
+  let largest = 0;
+  for (let i = 1; i < 4; i += 1) {
+    if (a[i][i] > a[largest][largest]) largest = i;
+  }
+  const vector = eigenvectors.map(row => row[largest]);
+  const length = Math.hypot(vector[0], vector[1], vector[2], vector[3]) || 1;
+  return [vector[0] / length, vector[1] / length, vector[2] / length, vector[3] / length];
 };
 
 const quaternionToMat3 = ([w, x, y, z]: [number, number, number, number]): Mat3 => [
@@ -175,8 +235,10 @@ export function solveSim3(source: Vec3[], target: Vec3[]): Sim3Result {
     return { ok: false, reason: 'at least three landmark pairs are required' };
   }
 
-  const rank = rankWarnings(source);
-  if (!rank.ok) return rank;
+  const sourceRank = rankWarnings(source);
+  if (!sourceRank.ok) return sourceRank;
+  const targetRank = rankWarnings(target);
+  if (!targetRank.ok) return targetRank;
 
   const sourceCenter = centroid(source);
   const targetCenter = centroid(target);
@@ -193,10 +255,15 @@ export function solveSim3(source: Vec3[], target: Vec3[]): Sim3Result {
   }
 
   const scale = numerator / denominator;
+  if (scale <= EPSILON) {
+    return { ok: false, reason: 'landmarks imply a mirrored transform; add more widely separated matching points' };
+  }
+
   const translation = subVec3(targetCenter, scaleVec3(mulMat3Vec3(rotation, sourceCenter), scale));
   const transform = { scale, rotation, translation };
   const residuals = source.map((point, index) => normVec3(subVec3(applySim3(transform, point), target[index])));
   const rmse = Math.sqrt(residuals.reduce((sum, residual) => sum + residual * residual, 0) / residuals.length);
 
-  return { ok: true, transform, residuals, rmse, warnings: rank.warnings };
+  const warnings = [...new Set([...sourceRank.warnings, ...targetRank.warnings])];
+  return { ok: true, transform, residuals, rmse, warnings };
 }

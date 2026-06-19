@@ -2,14 +2,14 @@
 
 ## Goal
 
-Build a public browser app for aligning two Gaussian splats by manually matching shared landmarks. The app should productize a focused standalone workflow between automatic registration tools that fail on hard scenes and manual transform editing in general-purpose splat editors.
+Build a public browser app for merging two Gaussian splats by manually matching shared landmarks or adjacent stitch guides. The app should productize a focused standalone workflow between automatic registration tools that fail on hard scenes and manual transform editing in general-purpose splat editors.
 
 ## Positioning
 
 Splat Align Workbench is not a replacement for SuperSplat. It focuses on one workflow:
 
 ```text
-Load two splats, identify matching real-world points, compute alignment, preview, export.
+Load two splats, identify matching landmarks or stitch guides, compute alignment, preview, export merged PLY.
 ```
 
 The app should feel like a focused workbench, not a full editor. SuperSplat remains the place for rich editing, cleanup, publishing, and broader scene manipulation.
@@ -39,7 +39,7 @@ Alignment Solver
   computes source -> target Sim(3) transform from 3+ pairs
 
 Preview and Export
-  overlays target + aligned source and exports aligned source/session files
+  overlays target + aligned source and exports merged PLY
 
 Analytics
   records product usage and performance events without uploading splat files
@@ -50,19 +50,20 @@ Analytics
 1. User opens the site.
 2. User loads a target splat and a source splat from local files.
 3. The app shows two independent viewers side by side.
-4. User navigates each viewer independently to find the same real-world feature.
-5. User records matching landmark pairs.
-6. At 0-2 pairs, the app shows that 3 pairs are required.
-7. At 3 pairs, the app computes a first source-to-target transform and unlocks overlay preview.
-8. At 4+ pairs, the app recomputes a best-fit transform after each pair and shows per-point residuals.
-9. User downloads an aligned source PLY and session JSON.
+4. User navigates each viewer independently to find the same real-world feature or adjacent stitch guide.
+5. User records matching landmark pairs in Overlap mode, or join/direction/plane guide pairs in Stitch mode.
+6. In Overlap mode, 3 complete matching pairs are required.
+7. In Stitch mode, one join pair, one direction pair, and at least two plane guide pairs are required.
+8. Once the mode's required pairs are complete, the app computes a source-to-target transform and unlocks overlay preview.
+9. At 4+ pairs, the app recomputes a best-fit transform after each pair and shows per-point residuals.
+10. User downloads a merged target-plus-aligned-source PLY.
 
 ## Non-Goals For MVP
 
 - Manual move/rotate/scale transform controls.
 - Full SuperSplat editor replacement.
 - Server-side splat uploads.
-- Fused/deduped merge export.
+- Deduped/fused merge cleanup.
 - Account system.
 - Automatic AI alignment.
 - Public sharing or publishing.
@@ -108,22 +109,21 @@ residual vectors
 MVP export:
 
 ```text
-aligned source PLY
-transform JSON
-session JSON
+merged target-plus-aligned-source PLY
 ```
 
 Later export:
 
 ```text
-combined PLY
+transform JSON
+session JSON
 deduped/fused merge
 SOG/SPZ export
 ```
 
 ## Privacy And Data
 
-Splat files stay local in browser memory by default. The app should not upload splat files, filenames, GPS metadata, source media, screenshots, or raw landmarks tied to file identity as part of normal analytics.
+Splat files stay local in browser memory by default. The app should not upload splat files, filenames, GPS metadata, source media, screenshots, raw landmarks tied to file identity, or raw error messages as part of normal analytics.
 
 Always-on usage analytics are intentional and should be built from day one. Events can include browser/GPU capability, file type, file size bucket, splat count bucket, load time, FPS bucket, landmark count, solve attempts, residual/error bucket, exports, crashes, and feature usage.
 
@@ -131,7 +131,7 @@ Opt-in training contribution is separate. A later phase can ask users to share a
 
 ## Roadmap
 
-Phase 1: Manual landmark alignment with local file loading, solver, overlay preview, and aligned-source export.
+Phase 1: Manual landmark alignment with local file loading, solver, overlay preview, and merged PLY export.
 
 Phase 2: Session import/export, better residual diagnostics, disabled outlier pairs, and support for additional splat formats.
 

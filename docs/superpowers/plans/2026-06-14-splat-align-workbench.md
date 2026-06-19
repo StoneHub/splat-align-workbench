@@ -1047,7 +1047,7 @@ Align two Gaussian splats by matching real-world landmarks.
 - Pick 3+ matching landmark pairs.
 - Compute source-to-target similarity transform.
 - Preview alignment.
-- Export aligned source and session JSON.
+- Export merged PLY as the public V1 artifact. Session/transform JSON helpers may remain internal or return in a later UI pass.
 
 ## Privacy
 

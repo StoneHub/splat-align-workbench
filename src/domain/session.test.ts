@@ -14,6 +14,12 @@ describe('alignment sessions', () => {
     const parsed = JSON.parse(json);
 
     expect(parsed.version).toBe(1);
+    expect(parsed).toMatchObject({
+      appName: 'Splat Align Workbench',
+      appUrl: 'https://merge.monroes.space',
+      author: 'Monroe Stone',
+      site: 'https://monroes.space'
+    });
     expect(json).not.toContain('starter-20260607');
     expect(json).not.toContain('component-3_5000');
   });
