@@ -44,6 +44,7 @@ Framework preset: Vite
 Build command: npm run build
 Build output directory: dist
 Node version: 20.19.0 or newer
+Production branch: main
 ```
 
 Optional environment variable:
@@ -59,6 +60,13 @@ Repository command checks:
 ```bash
 npm run test
 npm run build
+npm run smoke:live
+```
+
+Manual deploy command:
+
+```bash
+npm run deploy:pages
 ```
 
 ## Privacy And Credit
@@ -78,18 +86,20 @@ The app only emits allowlisted analytics fields. Do not send raw filenames, full
 
 Vite emits hashed assets under `/assets/*`. Keep `public/_headers` so Cloudflare Pages serves those files with long immutable caching and basic browser security headers.
 
-## Rollout Steps
+## Rollout Status
 
-1. Stabilize the current local MVP with real splat pick/solve/export QA.
-2. Commit the current renderer and workflow changes.
-3. Create/push the GitHub repository.
-4. Create a Cloudflare Pages project from the GitHub repo.
-5. Add `merge.monroes.space` as the Cloudflare Pages custom domain.
-6. Add a `monroes.space/merge` entry point in the main site.
-7. Add CI for `npm run test` and `npm run build`.
-8. Add basic privacy-safe analytics.
-9. Add attribution metadata if session/transform JSON returns.
-10. Later: add opt-in training contribution via Cloudflare Workers/R2 or another backend.
+- Live app: `https://merge.monroes.space`
+- Friendly entry point: `https://monroes.space/merge`
+- Cloudflare Pages project: `splat-align-workbench`
+- GitHub repo: `StoneHub/splat-align-workbench`
+- Public V1 artifact: merged target-plus-aligned-source PLY
+
+Next:
+
+1. Keep `main` as the launch branch.
+2. Run `npm run test`, `npm run build`, and `npm run smoke:live` before public announcements.
+3. Add a production `VITE_ANALYTICS_ENDPOINT` only after the privacy-safe collector exists.
+4. Later: add opt-in training contribution via Cloudflare Workers/R2 or another backend.
 
 ## Alternatives
 

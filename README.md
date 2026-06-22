@@ -22,9 +22,9 @@ Splat Align Workbench is a focused browser tool:
 
 Splat files stay local in the browser by default. Usage analytics track workflow health and performance using coarse buckets and event names. They must not upload splat files, filenames, screenshots, GPS metadata, raw landmarks, or raw error messages.
 
-## Deployment Direction
+## Live Deployment
 
-The intended public deployment is a standalone Cloudflare Pages app at `merge.monroes.space`, with `monroes.space/merge` as the friendly entry point from the main Monroe site. See [docs/deployment.md](docs/deployment.md).
+The public deployment is a standalone Cloudflare Pages app at `https://merge.monroes.space`, with `https://monroes.space/merge` as the friendly entry point from the main Monroe site. See [docs/deployment.md](docs/deployment.md).
 
 ## Development
 
@@ -33,11 +33,18 @@ npm install
 npm run dev:checked
 npm run test
 npm run build
+npm run smoke:live
 ```
 
 Use `npm run dev:checked` when asking an agent to spin up the workbench. It checks the preferred port, reuses an already healthy server, skips stale TCP listeners that fail HTTP verification, starts Vite on the first usable local port, and prints the verified URL. Avoid detached `nohup ... &` launch attempts from Codex; keep the verified Vite session running in the tool session instead.
 
 Cloudflare Pages should use Node `20.19.0` or newer, `npm run build`, and `dist` as the output directory.
+
+Deploy the current branch manually with:
+
+```bash
+npm run deploy:pages
+```
 
 Optional production analytics can be enabled with `VITE_ANALYTICS_ENDPOINT`. Keep it unset locally; when configured, outbound events are allowlisted before they leave the browser.
 

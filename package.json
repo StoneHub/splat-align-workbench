@@ -10,6 +10,8 @@
     "dev": "vite",
     "dev:checked": "node scripts/start-dev-server.mjs",
     "build": "tsc --noEmit && vite build",
+    "deploy:pages": "npm run build && npx --yes wrangler@latest pages deploy dist --project-name=splat-align-workbench --branch=main",
+    "smoke:live": "sh scripts/smoke-live.sh",
     "test": "vitest run",
     "test:watch": "vitest"
   },
