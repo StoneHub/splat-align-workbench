@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Splat Align Workbench — Alignment & Revamp Plan</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #091019; color: #e8f1f8; }
+    body { margin: 0 auto; max-width: 1100px; padding: 32px 20px 64px; }
+    h1 { margin-bottom: 4px; } h2 { margin-top: 36px; }
+    .muted { color: #91a5b7; } .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+    .card { border: 1px solid #26394a; border-radius: 12px; padding: 16px; background: #101b27; }
+    .p1 { border-color: #d56b55; } .done { border-color: #48a879; }
+    .tag { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 12px; background: #24384a; }
+    table { width: 100%; border-collapse: collapse; } th, td { text-align: left; vertical-align: top; border-bottom: 1px solid #26394a; padding: 10px; }
+    code { color: #9fdbff; } li { margin: 7px 0; }
+  </style>
+</head>
+<body>
+  <h1>Alignment & Code Revamp</h1>
+  <p class="muted">Audit baseline: 2026-07-11 · Product contract: local-first, landmark-driven Sim(3), trustworthy merged PLY.</p>
+
+  <h2>Alignment verdict</h2>
+  <div class="grid">
+    <section class="card done"><span class="tag">Aligned</span><h3>Core solve</h3><p>The source-to-target Horn/Umeyama-style Sim(3) convention is internally consistent, tested for scale, rotation, translation, noise, collinearity, and coplanar warnings.</p></section>
+    <section class="card p1"><span class="tag">Needs work</span><h3>Visual confidence</h3><p>The overlay still lacks landmark markers and residual vectors, so the user cannot inspect correspondence error in 3D.</p></section>
+    <section class="card p1"><span class="tag">Needs decision</span><h3>Stitch semantics</h3><p>Join, direction, and plane guides currently gate the workflow but are solved as equal-weight point pairs. Either implement geometric constraints or explicitly teach them as virtual corresponding points.</p></section>
+  </div>
+
+  <h2>Revamp sequence</h2>
+  <table>
+    <thead><tr><th>Phase</th><th>Outcome</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td>1 — Artifact safety</td><td>Typed vertex layout, controlled input rejection, schema-safe merge, stable repeated preview.</td><td>Implemented in current working tree; unit tests and build pass.</td></tr>
+      <tr><td>2 — Alignment diagnostics</td><td>Render target/source landmarks and residual vectors; expose per-pair selection in overlay.</td><td>Synthetic and real-splat browser QA demonstrate incorrect picks visibly.</td></tr>
+      <tr><td>3 — Workflow core</td><td>Extract a typed workbench controller/state machine from <code>App.ts</code>; inject renderer, analytics, and download ports.</td><td>Interaction tests cover load race/failure, pick progression, solve, mode switch, and export gating.</td></tr>
+      <tr><td>4 — Large-file export</td><td>Move merged output to a streaming path and define higher-order SH rotation fidelity.</td><td>Real large fixture exports without multi-copy memory spikes; rotated appearance is validated.</td></tr>
+      <tr><td>5 — Public UX</td><td>Responsive layout, accessible file controls/status/canvases, viewer disposal and resize observation.</td><td>Keyboard-only and narrow-viewport browser checks pass.</td></tr>
+      <tr><td>6 — Measurement</td><td>Production analytics config validation plus privacy-safe capability, load-time, FPS, and crash signals.</td><td>Live payload inspection contains allowlisted buckets only.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Known boundaries</h2>
+  <ul>
+    <li>Merged export intentionally rejects non-vertex PLY element payloads until their preservation semantics are implemented.</li>
+    <li>The current renderer/export lane supports binary little-endian, float32 vertex splat layouts; unsupported layouts now fail explicitly instead of being silently misread.</li>
+    <li>Higher-order spherical-harmonic coefficients are not rotated during export yet. That is an appearance-fidelity gate, not a cosmetic backlog item.</li>
+    <li>No server upload path is introduced. Files remain local in browser memory.</li>
+  </ul>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import { applySim3, type Mat3, type Sim3Transform, type Vec3 } from '../domain/sim3';
-import { parsePlyHeader } from '../domain/ply';
+import { parsePlyHeader, requireCompleteVertexData, requireFloat32VertexLayout } from '../domain/ply';
 
 type Quaternion = [number, number, number, number];
 
@@ -33,13 +33,8 @@ const normalizeQuaternion = (q: Quaternion): Quaternion => {
   return [q[0] / length, q[1] / length, q[2] / length, q[3] / length];
 };
 
-const propertyIndex = (properties: string[], name: string): number => properties.indexOf(name);
-
-const vertexStride = (properties: string[]): number => properties.length * 4;
-
 const vertexBody = (buffer: ArrayBuffer, header: ReturnType<typeof parsePlyHeader>): Uint8Array => {
-  const stride = vertexStride(header.properties);
-  return new Uint8Array(buffer, header.headerByteLength, header.vertexCount * stride);
+  return new Uint8Array(buffer, header.headerByteLength, header.vertexCount * header.vertexStride);
 };
 
 const combinedHeader = (headerText: string, vertexCount: number): Uint8Array => {
@@ -59,44 +54,47 @@ export function transformBrushPlyBuffer(buffer: ArrayBuffer, transform: Sim3Tran
   if (header.format !== 'binary_little_endian') {
     throw new Error('Only binary_little_endian PLY export is supported in the MVP');
   }
+  requireFloat32VertexLayout(header);
+  requireCompleteVertexData(header, buffer);
 
   const bytes = new Uint8Array(buffer.slice(0));
   const view = new DataView(bytes.buffer);
-  const stride = header.properties.length * 4;
-  const xIndex = propertyIndex(header.properties, 'x');
-  const yIndex = propertyIndex(header.properties, 'y');
-  const zIndex = propertyIndex(header.properties, 'z');
-  if (xIndex === -1 || yIndex === -1 || zIndex === -1) {
+  const stride = header.vertexStride;
+  const property = (name: string) => header.vertexProperties.find(item => item.name === name);
+  const x = property('x');
+  const y = property('y');
+  const z = property('z');
+  if (!x || !y || !z) {
     throw new Error('PLY is missing x/y/z properties');
   }
 
-  const rotationIndexes = ['rot_0', 'rot_1', 'rot_2', 'rot_3'].map(name => propertyIndex(header.properties, name));
-  const hasQuaternion = rotationIndexes.every(index => index !== -1);
+  const rotations = ['rot_0', 'rot_1', 'rot_2', 'rot_3'].map(property);
+  const hasQuaternion = rotations.every(Boolean);
   const alignQuaternion = normalizeQuaternion(mat3ToQuaternion(transform.rotation));
   const logScaleDelta = Math.log(Math.abs(transform.scale));
 
   for (let vertex = 0; vertex < header.vertexCount; vertex += 1) {
     const row = header.headerByteLength + vertex * stride;
     const position: Vec3 = [
-      view.getFloat32(row + xIndex * 4, true),
-      view.getFloat32(row + yIndex * 4, true),
-      view.getFloat32(row + zIndex * 4, true)
+      view.getFloat32(row + x.byteOffset, true),
+      view.getFloat32(row + y.byteOffset, true),
+      view.getFloat32(row + z.byteOffset, true)
     ];
     const transformed = applySim3(transform, position);
-    view.setFloat32(row + xIndex * 4, transformed[0], true);
-    view.setFloat32(row + yIndex * 4, transformed[1], true);
-    view.setFloat32(row + zIndex * 4, transformed[2], true);
+    view.setFloat32(row + x.byteOffset, transformed[0], true);
+    view.setFloat32(row + y.byteOffset, transformed[1], true);
+    view.setFloat32(row + z.byteOffset, transformed[2], true);
 
-    header.properties.forEach((property, index) => {
-      if (property.startsWith('scale_')) {
-        view.setFloat32(row + index * 4, view.getFloat32(row + index * 4, true) + logScaleDelta, true);
+    header.vertexProperties.forEach(item => {
+      if (item.name.startsWith('scale_')) {
+        view.setFloat32(row + item.byteOffset, view.getFloat32(row + item.byteOffset, true) + logScaleDelta, true);
       }
     });
 
     if (hasQuaternion) {
-      const current = normalizeQuaternion(rotationIndexes.map(index => view.getFloat32(row + index * 4, true)) as Quaternion);
+      const current = normalizeQuaternion(rotations.map(item => view.getFloat32(row + item!.byteOffset, true)) as Quaternion);
       const next = normalizeQuaternion(multiplyQuaternion(alignQuaternion, current));
-      rotationIndexes.forEach((index, component) => view.setFloat32(row + index * 4, next[component], true));
+      rotations.forEach((item, component) => view.setFloat32(row + item!.byteOffset, next[component], true));
     }
   }
 
@@ -109,7 +107,17 @@ export function createMergedSplatPlyBuffer(targetBuffer: ArrayBuffer, sourceBuff
   if (targetHeader.format !== 'binary_little_endian' || sourceHeader.format !== 'binary_little_endian') {
     throw new Error('Only binary_little_endian PLY export is supported in the MVP');
   }
-  if (targetHeader.properties.join('\n') !== sourceHeader.properties.join('\n')) {
+  requireFloat32VertexLayout(targetHeader);
+  requireFloat32VertexLayout(sourceHeader);
+  requireCompleteVertexData(targetHeader, targetBuffer);
+  requireCompleteVertexData(sourceHeader, sourceBuffer);
+  const trailingElements = [...targetHeader.elements, ...sourceHeader.elements]
+    .filter(element => element.name !== 'vertex' && element.count > 0);
+  if (trailingElements.length > 0) {
+    throw new Error('Merged export does not support PLY files with non-vertex element data');
+  }
+  const schema = (header: typeof targetHeader) => header.vertexProperties.map(item => `${item.type}:${item.name}`).join('\n');
+  if (schema(targetHeader) !== schema(sourceHeader)) {
     throw new Error('Combined preview export requires target and source PLY files with matching vertex properties');
   }
 

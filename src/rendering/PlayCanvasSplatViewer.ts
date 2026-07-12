@@ -27,6 +27,19 @@ const roleName = (input: SplatRenderInput): string => `${input.role}-${input.nam
 const worldUp: Vec3 = [0, 1, 0];
 const overlayTargetTint = { color: [0.05, 0.9, 1] as [number, number, number], alpha: 0.38 };
 const overlaySourceTint = { color: [1, 0.12, 0.85] as [number, number, number], alpha: 0.44 };
+const overlayTargetBuffers = new WeakMap<ArrayBuffer, ArrayBuffer>();
+const overlaySourceBuffers = new WeakMap<ArrayBuffer, ArrayBuffer>();
+const diagnosticBuffer = (
+  input: ArrayBuffer,
+  cache: WeakMap<ArrayBuffer, ArrayBuffer>,
+  tint: Parameters<typeof createDiagnosticSplatBuffer>[1]
+): ArrayBuffer => {
+  const cached = cache.get(input);
+  if (cached) return cached;
+  const created = createDiagnosticSplatBuffer(input, tint);
+  cache.set(input, created);
+  return created;
+};
 export const DEFAULT_CONTROL_SENSITIVITY = 0.65;
 const MIN_CONTROL_SENSITIVITY = 0.15;
 const MAX_CONTROL_SENSITIVITY = 2.5;
@@ -210,7 +223,7 @@ export class PlayCanvasSplatViewer implements SplatViewer {
         ...target,
         name: `xray-target-${target.name}`,
         role: 'overlayTarget',
-        buffer: createDiagnosticSplatBuffer(target.buffer, overlayTargetTint)
+        buffer: diagnosticBuffer(target.buffer, overlayTargetBuffers, overlayTargetTint)
       });
     }
     if (source && transform) {
@@ -218,7 +231,7 @@ export class PlayCanvasSplatViewer implements SplatViewer {
         ...source,
         name: `xray-source-${source.name}`,
         role: 'overlaySource',
-        buffer: createDiagnosticSplatBuffer(source.buffer, overlaySourceTint),
+        buffer: diagnosticBuffer(source.buffer, overlaySourceBuffers, overlaySourceTint),
         transform
       });
     }
@@ -301,6 +314,16 @@ export class PlayCanvasSplatViewer implements SplatViewer {
 
   private async setLayers(inputs: SplatRenderInput[]): Promise<void> {
     const token = ++this.loadToken;
+    const canReuse = inputs.length === this.layers.length
+      && inputs.every((input, index) => this.lastInputs[index]?.buffer === input.buffer
+        && roleName(this.lastInputs[index]) === roleName(input));
+    if (canReuse) {
+      inputs.forEach((input, index) => this.applyTransform(this.layers[index].entity, input.transform, true));
+      this.lastInputs = inputs;
+      this.frame(inputs);
+      this.app.renderNextFrame = true;
+      return;
+    }
     this.clearLayers();
     this.lastInputs = inputs;
     if (!inputs.length) {
@@ -309,21 +332,27 @@ export class PlayCanvasSplatViewer implements SplatViewer {
     }
 
     const loaded: LoadedLayer[] = [];
-    for (const input of inputs) {
-      const asset = await this.loadAsset(input);
-      if (token !== this.loadToken) {
-        asset.unload();
-        this.app.assets.remove(asset);
-        return;
+    try {
+      for (const input of inputs) {
+        const asset = await this.loadAsset(input);
+        if (token !== this.loadToken) {
+          asset.unload();
+          this.app.assets.remove(asset);
+          loaded.forEach(layer => this.disposeLayer(layer));
+          return;
+        }
+        const entity = new Entity(roleName(input), this.app);
+        entity.addComponent('gsplat', {
+          asset,
+          unified: true
+        });
+        this.applyTransform(entity, input.transform);
+        this.app.root.addChild(entity);
+        loaded.push({ asset, entity });
       }
-      const entity = new Entity(roleName(input), this.app);
-      entity.addComponent('gsplat', {
-        asset,
-        unified: true
-      });
-      this.applyTransform(entity, input.transform);
-      this.app.root.addChild(entity);
-      loaded.push({ asset, entity });
+    } catch (error) {
+      loaded.forEach(layer => this.disposeLayer(layer));
+      throw error;
     }
 
     this.layers = loaded;
@@ -333,11 +362,15 @@ export class PlayCanvasSplatViewer implements SplatViewer {
 
   private clearLayers(): void {
     for (const layer of this.layers) {
-      layer.entity.destroy();
-      layer.asset.unload();
-      this.app.assets.remove(layer.asset);
+      this.disposeLayer(layer);
     }
     this.layers = [];
+  }
+
+  private disposeLayer(layer: LoadedLayer): void {
+    layer.entity.destroy();
+    layer.asset.unload();
+    this.app.assets.remove(layer.asset);
   }
 
   private loadAsset(input: SplatRenderInput): Promise<Asset> {
@@ -359,8 +392,15 @@ export class PlayCanvasSplatViewer implements SplatViewer {
     });
   }
 
-  private applyTransform(entity: Entity, transform?: Sim3Transform): void {
-    if (!transform) return;
+  private applyTransform(entity: Entity, transform?: Sim3Transform, reset = false): void {
+    if (!transform) {
+      if (reset) {
+        entity.setLocalPosition(0, 0, 0);
+        entity.setLocalRotation(0, 0, 0, 1);
+        entity.setLocalScale(1, 1, 1);
+      }
+      return;
+    }
     const [w, x, y, z] = normalizeQuaternion(mat3ToQuaternion(transform.rotation));
     entity.setLocalPosition(transform.translation[0], transform.translation[1], transform.translation[2]);
     entity.setLocalRotation(new Quat(x, y, z, w));

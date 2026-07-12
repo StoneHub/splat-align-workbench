@@ -1,4 +1,4 @@
-import { parsePlyHeader } from '../domain/ply';
+import { parsePlyHeader, requireCompleteVertexData, requireFloat32VertexLayout } from '../domain/ply';
 
 type Rgb = [number, number, number];
 
@@ -15,22 +15,25 @@ const encodeOpacity = (alpha: number): number => Math.log(alpha / (1 - alpha));
 
 export function createDiagnosticSplatBuffer(buffer: ArrayBuffer, options: DiagnosticSplatOptions): ArrayBuffer {
   const header = parsePlyHeader(buffer);
-  const clone = buffer.slice(0);
-  if (header.format !== 'binary_little_endian') return clone;
+  if (header.format !== 'binary_little_endian') return buffer.slice(0);
+  requireFloat32VertexLayout(header);
+  requireCompleteVertexData(header, buffer);
 
-  const colorIndexes = ['f_dc_0', 'f_dc_1', 'f_dc_2'].map(property => header.properties.indexOf(property));
-  const opacityIndex = header.properties.indexOf('opacity');
-  if (colorIndexes.some(index => index === -1) || opacityIndex === -1) return clone;
+  const find = (name: string) => header.vertexProperties.find(property => property.name === name);
+  const colors = ['f_dc_0', 'f_dc_1', 'f_dc_2'].map(find);
+  const opacityProperty = find('opacity');
+  const clone = buffer.slice(0);
+  if (colors.some(property => !property) || !opacityProperty) return clone;
 
   const view = new DataView(clone);
-  const stride = header.properties.length * 4;
+  const stride = header.vertexStride;
   const color = encodeColor(options.color);
   const opacity = encodeOpacity(Math.min(0.99, Math.max(0.01, options.alpha)));
 
   for (let vertex = 0; vertex < header.vertexCount; vertex += 1) {
     const row = header.headerByteLength + vertex * stride;
-    colorIndexes.forEach((index, channel) => view.setFloat32(row + index * 4, color[channel], true));
-    view.setFloat32(row + opacityIndex * 4, opacity, true);
+    colors.forEach((property, channel) => view.setFloat32(row + property!.byteOffset, color[channel], true));
+    view.setFloat32(row + opacityProperty.byteOffset, opacity, true);
   }
 
   return clone;

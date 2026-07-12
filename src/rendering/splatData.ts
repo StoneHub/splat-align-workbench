@@ -1,4 +1,4 @@
-import { parsePlyHeader } from '../domain/ply';
+import { parsePlyHeader, requireCompleteVertexData, requireFloat32VertexLayout } from '../domain/ply';
 import { applySim3, type Sim3Transform, type Vec3 } from '../domain/sim3';
 
 export interface SplatCloud {
@@ -48,24 +48,26 @@ export function loadSplatCloudFromPly(buffer: ArrayBuffer, sampleLimit = 90_000)
   if (header.format !== 'binary_little_endian') {
     throw new Error('MVP viewer supports binary_little_endian PLY files');
   }
-  const xIndex = header.properties.indexOf('x');
-  const yIndex = header.properties.indexOf('y');
-  const zIndex = header.properties.indexOf('z');
-  if (xIndex === -1 || yIndex === -1 || zIndex === -1) {
+  requireFloat32VertexLayout(header);
+  requireCompleteVertexData(header, buffer);
+  const x = header.vertexProperties.find(property => property.name === 'x');
+  const y = header.vertexProperties.find(property => property.name === 'y');
+  const z = header.vertexProperties.find(property => property.name === 'z');
+  if (!x || !y || !z) {
     throw new Error('PLY is missing x/y/z properties');
   }
 
   const view = new DataView(buffer);
-  const stride = header.properties.length * 4;
+  const stride = header.vertexStride;
   const step = Math.max(1, Math.ceil(header.vertexCount / sampleLimit));
   const points: Vec3[] = [];
 
   for (let vertex = 0; vertex < header.vertexCount; vertex += step) {
     const row = header.headerByteLength + vertex * stride;
     points.push(toVec3(
-      view.getFloat32(row + xIndex * 4, true),
-      view.getFloat32(row + yIndex * 4, true),
-      view.getFloat32(row + zIndex * 4, true)
+      view.getFloat32(row + x.byteOffset, true),
+      view.getFloat32(row + y.byteOffset, true),
+      view.getFloat32(row + z.byteOffset, true)
     ));
   }
 
