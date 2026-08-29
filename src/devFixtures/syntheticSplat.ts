@@ -32,11 +32,11 @@ export interface SyntheticAlignmentManifest {
     targetOnlyElements: string[];
   };
   stitch?: {
-    constraints: Array<{
+    correspondences: Array<{
       id: string;
       kind: 'join' | 'direction' | 'plane';
       label: string;
-      intent: string;
+      meaning: string;
     }>;
   };
   notes: string[];
@@ -405,16 +405,16 @@ export function createSyntheticStitchFixture(): SyntheticAlignmentFixture {
       ]
     },
     stitch: {
-      constraints: [
-        { id: 'A', kind: 'join', label: 'Join seam', intent: 'source seam point should touch the target seam point' },
-        { id: 'B', kind: 'direction', label: 'Direction guide', intent: 'source continuation direction should follow the target path direction' },
-        { id: 'C', kind: 'plane', label: 'Plane guide 1', intent: 'left road edge keeps the stitched surface from rolling' },
-        { id: 'D', kind: 'plane', label: 'Plane guide 2', intent: 'height marker keeps vertical plane continuity stable' }
+      correspondences: [
+        { id: 'A', kind: 'join', label: 'Join seam', meaning: 'a source seam point corresponding to the target seam point' },
+        { id: 'B', kind: 'direction', label: 'Direction guide', meaning: 'a source path sample corresponding to a target path sample' },
+        { id: 'C', kind: 'plane', label: 'Plane guide 1', meaning: 'a source road-edge sample corresponding to a target road-edge sample' },
+        { id: 'D', kind: 'plane', label: 'Plane guide 2', meaning: 'a source height sample corresponding to a target height sample' }
       ]
     },
     notes: [
       'This fixture has adjacent road segments rather than shared surface overlap.',
-      'Use A as the seam join, B as the direction guide, and C/D as plane continuity guides.',
+      'Use A as the seam pair, B as the direction-labeled pair, and C/D as plane-labeled pairs.',
       'The app should recover the knownSourceToTarget transform and export one continuous merged PLY.'
     ]
   };

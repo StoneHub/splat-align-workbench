@@ -34,7 +34,7 @@ const landmarkRows = (snapshot: WorkbenchSnapshot): string => snapshot.pairs.map
     <div class="landmark-row ${active ? 'active' : ''}" data-pair="${pair.id}">
       <button type="button" data-select-pair="${pair.id}">${pair.id}</button>
       <label><input type="checkbox" data-toggle-pair="${pair.id}" ${pair.enabled ? 'checked' : ''} /> enabled</label>
-      <span class="constraint-label">${label}</span>
+      <span class="pair-label">${label}</span>
       <button type="button" data-pick-side="target" data-pair-id="${pair.id}"${targetPickClass}>Target: ${target}</button>
       <button type="button" data-pick-side="source" data-pair-id="${pair.id}"${sourcePickClass}>Source: ${source}</button>
       ${residual}

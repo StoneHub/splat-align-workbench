@@ -238,7 +238,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
     await loadSplat('target', fixtureFile(fixture.files.target.name, fixture.files.target.buffer), false);
     await loadSplat('source', fixtureFile(fixture.files.source.name, fixture.files.source.buffer), false);
     pairs = fixture.manifest.landmarks.map(landmark => {
-      const virtual = fixture.manifest.stitch?.constraints.find(item => item.id === landmark.id);
+      const virtual = fixture.manifest.stitch?.correspondences.find(item => item.id === landmark.id);
       return {
         id: landmark.id,
         label: virtual?.label ?? 'Match point',

@@ -92,6 +92,22 @@ describe('WorkbenchController', () => {
     expect(controller.current().splats.target?.displayName).toBe('latest.ply');
   });
 
+  it('keeps load failures and premature exports inside the controller interface', async () => {
+    const { controller } = createHarness();
+    const invalid = new TextEncoder().encode('not a ply').buffer;
+
+    const loadOutcome = await controller.execute({
+      kind: 'load-splat',
+      side: 'target',
+      file: fixtureFile('broken.ply', invalid)
+    });
+    const exportOutcome = await controller.execute({ kind: 'export', artifact: 'session-json' });
+
+    expect(loadOutcome).toMatchObject({ ok: false, problem: { code: 'operation-failed' } });
+    expect(controller.current().splats.target).toBeNull();
+    expect(exportOutcome).toMatchObject({ ok: false, problem: { code: 'export-unavailable' } });
+  });
+
   it('solves through commands and exports matching PLY and session artifacts', async () => {
     const { controller, downloads } = createHarness();
     await controller.execute({ kind: 'load-synthetic' });
@@ -107,7 +123,8 @@ describe('WorkbenchController', () => {
       await controller.execute({ kind: 'record-pick', side: 'source', point });
     }
 
-    expect(controller.current().alignment?.ok).toBe(true);
+    const solved = controller.current().alignment;
+    expect(solved?.ok).toBe(true);
     expect(controller.current().exports).toEqual({ mergedPly: true, sessionJson: true });
 
     await controller.execute({ kind: 'export', artifact: 'merged-ply' });
@@ -118,7 +135,9 @@ describe('WorkbenchController', () => {
       'splat-align-session-2026-08-29T12-00-00-000Z.json'
     ]);
     const json = await downloads.saved[1].blob.text();
-    expect(json).toContain('"appName": "Splat Align Workbench"');
+    const parsed = JSON.parse(json);
+    expect(parsed.appName).toBe('Splat Align Workbench');
+    expect(parsed.transform).toEqual(solved?.transform);
     expect(json).not.toContain('synthetic-target.ply');
     expect(json).not.toContain('synthetic-source.ply');
   });

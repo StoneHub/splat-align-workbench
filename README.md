@@ -54,7 +54,7 @@ The current renderer uses PlayCanvas `gsplat` components for local PLY loading, 
 
 Use the app's `Load Synthetic Set` button when real splats make picking and navigation too noisy to debug. In Overlap mode it generates a target/source checkerboard scene with five colored tower-cap landmarks. In Experimental Stitch mode it generates adjacent road segments with seam, direction, and plane labels. These labels are virtual corresponding points, not geometric constraints.
 
-`Merged PLY` exports the target splat plus the aligned source splat in one file. This is the primary output. Alignment session JSON is the required companion artifact; issue [#3](https://github.com/StoneHub/splat-align-workbench/issues/3) tracks its public UI connection.
+`Merged PLY` exports the target splat plus the aligned source splat in one file. This is the primary output. `Session JSON` exports the same Alignment and Landmark pairs without raw filenames or splat contents.
 
 Large PLY files are processed locally in browser memory. Practical limits depend on the user's machine and browser.
 

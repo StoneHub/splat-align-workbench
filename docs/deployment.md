@@ -78,7 +78,7 @@ The public app should clearly state:
 - opt-in training contribution is separate and comes later
 - built by Monroe Stone / monroes.space
 
-Public V1 requires a Merged PLY as the primary artifact and Alignment session JSON as its companion. The serializer exists, but issue #3 tracks the missing public UI connection. Transform JSON remains internal.
+Public V1 provides a Merged PLY as the primary artifact and Alignment session JSON as its companion. Transform JSON remains internal.
 
 The app only emits allowlisted analytics fields. Do not send raw filenames, full error messages, raw landmarks, screenshots, GPS/location metadata, or splat file contents from the browser.
 
@@ -92,7 +92,7 @@ Vite emits hashed assets under `/assets/*`. Keep `public/_headers` so Cloudflare
 - Friendly entry point: `https://monroes.space/merge`
 - Cloudflare Pages project: `splat-align-workbench`
 - GitHub repo: `StoneHub/splat-align-workbench`
-- Public V1 artifacts: primary Merged PLY plus companion Alignment session JSON; the JSON UI connection remains pending in issue #3
+- Public V1 artifacts: primary Merged PLY plus companion Alignment session JSON
 
 Next:
 
