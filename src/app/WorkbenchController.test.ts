@@ -1,63 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryAnalyticsProvider } from '../analytics/analytics';
-import { applySim3, type Sim3Transform, type Vec3 } from '../domain/sim3';
+import { applySim3, type Vec3 } from '../domain/sim3';
 import { createSyntheticAlignmentFixture } from '../devFixtures/syntheticSplat';
-import type { SplatRenderInput, SplatViewer } from '../rendering/RendererAdapter';
+import { InMemorySplatViewer } from '../rendering/InMemorySplatViewer';
 import { loadSplatCloudFromPly } from '../rendering/splatData';
 import { createWorkbenchController, type DownloadAdapter, type SplatFileInput, type WorkbenchController } from './WorkbenchController';
-
-class MemoryViewer implements SplatViewer {
-  pickMode = false;
-  sensitivity = 1;
-  layer: SplatRenderInput | null = null;
-  overlay: { target: SplatRenderInput | null; source: SplatRenderInput | null; transform?: Sim3Transform } | null = null;
-  private nextLayerGate: { started: () => void; wait: Promise<void> } | null = null;
-  private nextOverlayGate: { started: () => void; wait: Promise<void> } | null = null;
-
-  delayNextLayer(): { started: Promise<void>; release: () => void } {
-    let signalStarted!: () => void;
-    let release!: () => void;
-    const started = new Promise<void>(resolve => { signalStarted = resolve; });
-    const wait = new Promise<void>(resolve => { release = resolve; });
-    this.nextLayerGate = { started: signalStarted, wait };
-    return { started, release };
-  }
-
-  delayNextOverlay(): { started: Promise<void>; release: () => void } {
-    let signalStarted!: () => void;
-    let release!: () => void;
-    const started = new Promise<void>(resolve => { signalStarted = resolve; });
-    const wait = new Promise<void>(resolve => { release = resolve; });
-    this.nextOverlayGate = { started: signalStarted, wait };
-    return { started, release };
-  }
-
-  setPickHandler(): void {}
-  setPickMissHandler(): void {}
-  setPickMode(enabled: boolean): void { this.pickMode = enabled; }
-  setControlSensitivity(value: number): void { this.sensitivity = value; }
-  async setLayer(input: SplatRenderInput | null): Promise<void> {
-    const gate = this.nextLayerGate;
-    this.nextLayerGate = null;
-    this.layer = input;
-    if (gate) {
-      gate.started();
-      await gate.wait;
-    }
-  }
-  async setOverlay(target: SplatRenderInput | null, source: SplatRenderInput | null, transform?: Sim3Transform): Promise<void> {
-    const gate = this.nextOverlayGate;
-    this.nextOverlayGate = null;
-    if (gate) {
-      gate.started();
-      await gate.wait;
-    }
-    this.overlay = { target, source, transform };
-  }
-  resetView(): void {}
-  zoomBy(): void {}
-  resize(): void {}
-}
 
 class MemoryDownloads implements DownloadAdapter {
   readonly saved: Array<{ name: string; blob: Blob }> = [];
@@ -78,9 +25,9 @@ const expectVecClose = (actual: Vec3, expected: Vec3) => {
 
 const createHarness = () => {
   const viewers = {
-    target: new MemoryViewer(),
-    source: new MemoryViewer(),
-    overlay: new MemoryViewer()
+    target: new InMemorySplatViewer(),
+    source: new InMemorySplatViewer(),
+    overlay: new InMemorySplatViewer()
   };
   const analytics = new MemoryAnalyticsProvider();
   const downloads = new MemoryDownloads();
@@ -151,7 +98,7 @@ describe('WorkbenchController', () => {
     const { controller, viewers } = createHarness();
     const fixture = createSyntheticAlignmentFixture();
     await controller.execute({ kind: 'load-synthetic' });
-    const oldGate = viewers.target.delayNextLayer();
+    const oldGate = viewers.target.delayNextReplacement();
     const oldLoad = controller.execute({
       kind: 'load-splat',
       side: 'target',
@@ -159,7 +106,7 @@ describe('WorkbenchController', () => {
     });
     await oldGate.started;
 
-    const latestGate = viewers.target.delayNextLayer();
+    const latestGate = viewers.target.delayNextReplacement();
     const latestLoad = controller.execute({
       kind: 'load-splat',
       side: 'target',
@@ -171,7 +118,7 @@ describe('WorkbenchController', () => {
     await Promise.all([oldLoad, latestLoad]);
 
     expect(controller.current().splats.target?.displayName).toBe('latest.ply');
-    expect(viewers.target.layer?.name).toBe('latest.ply');
+    expect(viewers.target.currentScene()).toMatchObject({ kind: 'single', splat: { name: 'latest.ply' } });
   });
 
   it('keeps load failures and premature exports inside the controller interface', async () => {
@@ -199,9 +146,9 @@ describe('WorkbenchController', () => {
       await controller.execute({ kind: 'select-pair', pairId: landmark.id });
       await controller.execute({ kind: 'record-pick', side: 'target', point: landmark.target });
       expect(controller.current().activeSide).toBe('source');
-      expect(viewers.source.pickMode).toBe(true);
+      expect(viewers.source.isPickModeEnabled()).toBe(true);
       await controller.execute({ kind: 'record-pick', side: 'source', point: landmark.source });
-      expect(viewers.source.pickMode).toBe(false);
+      expect(viewers.source.isPickModeEnabled()).toBe(false);
       if (landmark.id !== 'C') expect(controller.current().exports.mergedPly).toBe(false);
     }
 
@@ -211,6 +158,20 @@ describe('WorkbenchController', () => {
     expect(controller.current().exports).toEqual({ mergedPly: true, sessionJson: true });
     expect(controller.current().status).toContain('3 pairs solved. RMSE');
     expect(controller.current().pairs.slice(0, 3).every(pair => pair.residual !== undefined)).toBe(true);
+    expect(viewers.overlay.currentScene()).toMatchObject({
+      kind: 'overlay',
+      source: { sourceToTarget: solved?.transform },
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ id: 'A', selected: false, target: fixture.manifest.landmarks[0].target, source: fixture.manifest.landmarks[0].source }),
+        expect.objectContaining({ id: 'C', selected: true })
+      ])
+    });
+
+    await controller.execute({ kind: 'select-pair', pairId: 'B' });
+    expect(viewers.overlay.currentScene()).toMatchObject({
+      kind: 'overlay',
+      diagnostics: expect.arrayContaining([expect.objectContaining({ id: 'B', selected: true })])
+    });
 
     await controller.execute({ kind: 'set-pair-enabled', pairId: 'E', enabled: false });
 
@@ -258,7 +219,7 @@ describe('WorkbenchController', () => {
     await started;
     expect(controller.current().alignment).toBeNull();
     expect(controller.current().exports).toEqual({ mergedPly: false, sessionJson: false });
-    expect(viewers.overlay.overlay?.source).toBeNull();
+    expect(viewers.overlay.currentScene()).toMatchObject({ kind: 'overlay', source: null });
     expect(await controller.execute({ kind: 'export', artifact: 'merged-ply' })).toMatchObject({
       ok: false,
       problem: { code: 'export-unavailable' }
@@ -284,7 +245,7 @@ describe('WorkbenchController', () => {
     expect(controller.current().pairs).toEqual(before.pairs);
     expect(controller.current().alignment).toEqual(before.alignment);
     expect(controller.current().exports).toEqual({ mergedPly: true, sessionJson: true });
-    expect(viewers.overlay.overlay?.source).not.toBeNull();
+    expect(viewers.overlay.currentScene()).toMatchObject({ kind: 'overlay', source: { sourceToTarget: before.alignment?.transform } });
   });
 
   it('restores a valid Alignment after an export attempt during a failed replacement', async () => {
@@ -316,7 +277,7 @@ describe('WorkbenchController', () => {
     expect(controller.current().pairs).toEqual(before.pairs);
     expect(controller.current().alignment).toEqual(before.alignment);
     expect(controller.current().exports).toEqual({ mergedPly: true, sessionJson: true });
-    expect(viewers.overlay.overlay?.source).not.toBeNull();
+    expect(viewers.overlay.currentScene()).toMatchObject({ kind: 'overlay', source: { sourceToTarget: before.alignment?.transform } });
   });
 
   it('does not restore an old Alignment after mode changes during a failed replacement', async () => {
@@ -348,7 +309,7 @@ describe('WorkbenchController', () => {
     expect(controller.current().pairs).toHaveLength(4);
     expect(controller.current().alignment).toBeNull();
     expect(controller.current().exports).toEqual({ mergedPly: false, sessionJson: false });
-    expect(viewers.overlay.overlay?.source).toBeNull();
+    expect(viewers.overlay.currentScene()).toMatchObject({ kind: 'overlay', source: null });
     expect(controller.current().splats.target).toEqual(originalTarget);
   });
 
@@ -363,7 +324,7 @@ describe('WorkbenchController', () => {
     await controller.execute({ kind: 'select-pair', pairId: 'C' });
     await controller.execute({ kind: 'record-pick', side: 'target', point: identityPoints[2].point });
 
-    const overlayGate = viewers.overlay.delayNextOverlay();
+    const overlayGate = viewers.overlay.delayNextReplacement();
     const solve = controller.execute({ kind: 'record-pick', side: 'source', point: identityPoints[2].point });
     await overlayGate.started;
     const disable = controller.execute({ kind: 'set-pair-enabled', pairId: 'A', enabled: false });
@@ -372,7 +333,7 @@ describe('WorkbenchController', () => {
 
     expect(controller.current().alignment).toBeNull();
     expect(controller.current().status).not.toContain('solved. RMSE');
-    expect(viewers.overlay.overlay?.source).toBeNull();
+    expect(viewers.overlay.currentScene()).toMatchObject({ kind: 'overlay', source: null });
   });
 
   it('does not let delayed solve feedback overwrite a newer pick instruction', async () => {
@@ -386,7 +347,7 @@ describe('WorkbenchController', () => {
     await controller.execute({ kind: 'select-pair', pairId: 'C' });
     await controller.execute({ kind: 'record-pick', side: 'target', point: identityPoints[2].point });
 
-    const overlayGate = viewers.overlay.delayNextOverlay();
+    const overlayGate = viewers.overlay.delayNextReplacement();
     const solve = controller.execute({ kind: 'record-pick', side: 'source', point: identityPoints[2].point });
     await overlayGate.started;
     await controller.execute({ kind: 'arm-pick', pairId: 'B', side: 'target' });
@@ -394,7 +355,7 @@ describe('WorkbenchController', () => {
     await solve;
 
     expect(controller.current().status).toBe('Click a point in the target viewer for Match point.');
-    expect(viewers.target.pickMode).toBe(true);
+    expect(viewers.target.isPickModeEnabled()).toBe(true);
   });
 
   it('returns deep snapshots that cannot mutate controller state', async () => {

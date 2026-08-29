@@ -7,4 +7,6 @@ if (!root) {
   throw new Error('Missing app root');
 }
 
-createApp(root);
+const disposeApp = createApp(root);
+window.addEventListener('pagehide', disposeApp, { once: true });
+if (import.meta.hot) import.meta.hot.dispose(disposeApp);

@@ -47,8 +47,10 @@ const fileLabel = (snapshot: WorkbenchSnapshot, side: SplatSide): string => {
   return splat ? `${splat.displayName} · ${splat.vertexCount.toLocaleString()} splats` : 'No file loaded';
 };
 
-export function createApp(root: HTMLElement): void {
+export function createApp(root: HTMLElement): () => void {
   root.innerHTML = createAppMarkup();
+  const appListeners = new AbortController();
+  let disposed = false;
 
   const targetViewer = new PlayCanvasSplatViewer(root.querySelector('[data-viewer="target"]') as HTMLCanvasElement);
   const sourceViewer = new PlayCanvasSplatViewer(root.querySelector('[data-viewer="source"]') as HTMLCanvasElement);
@@ -83,25 +85,28 @@ export function createApp(root: HTMLElement): void {
 
   const executeAndRender = async (command: WorkbenchCommand) => {
     const outcome = await controller.execute(command);
+    if (disposed) return;
     render(outcome.snapshot);
   };
 
-  targetViewer.setPickHandler(point => void executeAndRender({ kind: 'record-pick', side: 'target', point }));
-  sourceViewer.setPickHandler(point => void executeAndRender({ kind: 'record-pick', side: 'source', point }));
-  targetViewer.setPickMissHandler(() => void executeAndRender({ kind: 'pick-missed', side: 'target' }));
-  sourceViewer.setPickMissHandler(() => void executeAndRender({ kind: 'pick-missed', side: 'source' }));
+  const stopTargetPick = targetViewer.onPick(event => void executeAndRender(event.kind === 'hit'
+    ? { kind: 'record-pick', side: 'target', point: event.worldPosition }
+    : { kind: 'pick-missed', side: 'target' }));
+  const stopSourcePick = sourceViewer.onPick(event => void executeAndRender(event.kind === 'hit'
+    ? { kind: 'record-pick', side: 'source', point: event.worldPosition }
+    : { kind: 'pick-missed', side: 'source' }));
 
   root.querySelectorAll<HTMLInputElement>('[data-file-input]').forEach(input => {
     input.addEventListener('change', () => {
       const side = input.dataset.fileInput as SplatSide;
       const file = input.files?.[0];
       if (file) void executeAndRender({ kind: 'load-splat', side, file });
-    });
+    }, { signal: appListeners.signal });
   });
 
   root.querySelector<HTMLInputElement>('[data-control-sensitivity]')?.addEventListener('input', event => {
     void executeAndRender({ kind: 'set-control-sensitivity', value: Number((event.target as HTMLInputElement).value) });
-  });
+  }, { signal: appListeners.signal });
 
   root.addEventListener('click', event => {
     const target = event.target as HTMLElement;
@@ -141,7 +146,18 @@ export function createApp(root: HTMLElement): void {
         factor: wheelZoomFactor(1, controller.current().controlSensitivity)
       });
     }
-  });
+  }, { signal: appListeners.signal });
 
   void executeAndRender({ kind: 'set-control-sensitivity', value: DEFAULT_CONTROL_SENSITIVITY });
+
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    appListeners.abort();
+    stopTargetPick();
+    stopSourcePick();
+    controller.close();
+    Object.values(viewers).forEach(viewer => viewer.dispose());
+    root.replaceChildren();
+  };
 }

@@ -48,7 +48,7 @@ npm run deploy:pages
 
 Keep `VITE_ANALYTICS_ENDPOINT` unset in local and production environments. Issue [#8](https://github.com/StoneHub/splat-align-workbench/issues/8) tracks the proof required before outbound collection can be enabled.
 
-The current renderer uses PlayCanvas `gsplat` components for local PLY loading, independent viewer navigation, overlay preview, and depth-buffer world picking.
+The current renderer uses PlayCanvas `gsplat` components for local PLY loading, independent viewer navigation, overlay preview, and depth-buffer world picking. Its declarative scene contract makes replacement latest-call-wins and keeps the last committed scene visible if a new asset fails to load. The Overlay renders target/source Landmark crosses, residual vectors, selected-pair emphasis, and outlier emphasis. Viewer resize, stale picks, pending loads, and teardown are explicit lifecycle behavior.
 
 ## Synthetic Fixtures
 
@@ -56,7 +56,7 @@ Use the app's `Load Synthetic Set` button when real splats make picking and navi
 
 `Merged PLY` exports the target splat plus the aligned source splat in one file. This is the primary output. `Session JSON` exports the same Alignment and Landmark pairs without raw filenames or splat contents.
 
-Large PLY files are processed locally in browser memory. Practical limits depend on the user's machine and browser.
+The current Merged PLY exporter uses full browser buffers and is not certified for medium or large files. A 65.030 MiB Bucky self-pair added about 200.261 MiB of browser-reported used heap while producing a 130.059 MiB Blob. Do not run the 419 MiB Cedar or larger fixtures through this path. The measured chunked-export budget, fail-closed gates, and spherical-harmonic rotation contract are in [docs/large-ply-export-plan.md](docs/large-ply-export-plan.md).
 
 ## Viewer Controls
 

@@ -151,4 +151,4 @@ Selected: fresh app using separable PlayCanvas splat rendering primitives
 Deferred fallback: focused app built from SuperSplat internals while preserving narrow UX
 ```
 
-Overlay Landmark markers, residual vectors, resize observation, and viewer disposal remain open work in issue #6.
+The renderer seam is declarative: callers replace an `empty`, `single`, or `overlay` scene, while the adapter owns atomic replacement, latest-call-wins stale-load handling, resize observation, picking, and disposal. The Overlay renders target/source Landmark markers, residual vectors, selected-pair emphasis, and outlier emphasis using the same Source-to-Target transform as the Source splat. An in-memory adapter exercises the lifecycle contract independently from PlayCanvas.

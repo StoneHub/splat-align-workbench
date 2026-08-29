@@ -1,5 +1,5 @@
 import { parsePlyHeader } from './ply';
-import type { SplatRenderInput } from '../rendering/RendererAdapter';
+import type { SplatRenderSource } from '../rendering/RendererAdapter';
 import { loadSplatCloudFromPly, type SplatCloud, type SplatFileStats } from '../rendering/splatData';
 
 export type SplatSide = 'target' | 'source';
@@ -37,12 +37,11 @@ export async function readSplatArtifact(side: SplatSide, file: SplatFileInput): 
   };
 }
 
-export function splatRenderInput(artifact: SplatArtifact): SplatRenderInput {
+export function splatRenderSource(artifact: SplatArtifact): SplatRenderSource {
   return {
     name: artifact.displayName,
     buffer: artifact.buffer,
-    cloud: artifact.cloud,
-    role: artifact.side
+    cloud: artifact.cloud
   };
 }
 

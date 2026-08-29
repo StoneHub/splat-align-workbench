@@ -2,8 +2,9 @@ import { analyticsErrorCode, bucketBytes, bucketCount } from '../analytics/analy
 import { canSolveForMode, createPairsForMode, landmarkModeCopy, nextPairForMode, type AlignmentMode } from '../domain/alignmentMode';
 import { completeEnabledPairs, flagResiduals, setLandmarkPoint, toggleLandmark, type LandmarkPair } from '../domain/landmarks';
 import { solveSim3, type Sim3Success } from '../domain/sim3';
-import { inMemorySplatFile, readSplatArtifact, splatRenderInput, type SplatArtifact, type SplatFileInput, type SplatSide } from '../domain/splatArtifact';
+import { inMemorySplatFile, readSplatArtifact, splatRenderSource, type SplatArtifact, type SplatFileInput, type SplatSide } from '../domain/splatArtifact';
 import { createSyntheticAlignmentFixture, createSyntheticStitchFixture } from '../devFixtures/syntheticSplat';
+import type { LandmarkDiagnostic, ViewerScene } from '../rendering/RendererAdapter';
 import { formatSolveStatus } from './solveFeedback';
 import { buildWorkbenchArtifact, type WorkbenchArtifactKind } from './workbenchExport';
 import { cloneAlignment, cloneLandmarkPairs } from './workbenchSnapshot';
@@ -56,11 +57,6 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
   let alignmentRevision = 0;
   let pendingLoadCount = 0;
   let loadBackup: WorkbenchStateBackup | null = null;
-  let overlayQueueTail = Promise.resolve();
-  const layerQueueTail: Record<SplatSide, Promise<void>> = {
-    target: Promise.resolve(),
-    source: Promise.resolve()
-  };
 
   analytics.track('session_started', { localFilesOnly: true });
 
@@ -90,18 +86,34 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
     viewers.source.setPickMode(false);
   };
 
-  const showOverlay = (result: Sim3Success | null): Promise<void> => {
-    const target = splats.target ? splatRenderInput(splats.target) : null;
-    const source = result && splats.source ? splatRenderInput(splats.source) : null;
-    const effect = overlayQueueTail.then(() => viewers.overlay.setOverlay(target, source, result?.transform));
-    overlayQueueTail = effect.catch(() => undefined);
-    return effect;
+  const overlayDiagnostics = (): LandmarkDiagnostic[] => pairs.map(pair => ({
+    id: pair.id,
+    target: pair.target,
+    source: pair.source,
+    enabled: pair.enabled,
+    selected: pair.id === activePairId,
+    quality: pair.quality
+  }));
+
+  const showOverlay = async (result: Sim3Success | null): Promise<void> => {
+    const scene: ViewerScene = !splats.target
+      ? { kind: 'empty' }
+      : {
+          kind: 'overlay',
+          target: splatRenderSource(splats.target),
+          source: result && splats.source ? {
+            splat: splatRenderSource(splats.source),
+            sourceToTarget: result.transform
+          } : null,
+          diagnostics: result ? overlayDiagnostics() : []
+        };
+    await viewers.overlay.replace(scene);
   };
 
-  const setLayer = (side: SplatSide, input: ReturnType<typeof splatRenderInput> | null): Promise<void> => {
-    const effect = layerQueueTail[side].then(() => viewers[side].setLayer(input));
-    layerQueueTail[side] = effect.catch(() => undefined);
-    return effect;
+  const setLayer = async (side: SplatSide, artifact: SplatArtifact | null): Promise<void> => {
+    await viewers[side].replace(artifact
+      ? { kind: 'single', splat: splatRenderSource(artifact) }
+      : { kind: 'empty' });
   };
 
   const captureState = (): WorkbenchStateBackup => ({
@@ -184,7 +196,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
         requestId,
       };
 
-      await setLayer(side, splatRenderInput(loaded));
+      await setLayer(side, loaded);
       if (requestId !== loadRequest[side]) return;
       splats[side] = loaded;
       pairs = createPairsForMode(mode);
@@ -219,7 +231,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           splats.target = loadBackup.splats.target;
           splats.source = loadBackup.splats.source;
         }
-        await setLayer(side, splats[side] ? splatRenderInput(splats[side]) : null);
+        await setLayer(side, splats[side]);
         await showOverlay(alignment);
         if (loadStillOwnsState) status = error instanceof Error ? error.message : String(error);
       }
@@ -312,6 +324,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           break;
         case 'select-pair':
           activePairId = command.pairId;
+          if (alignment) await showOverlay(alignment);
           break;
         case 'arm-pick': {
           activePairId = command.pairId;
@@ -320,6 +333,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           viewers.source.setPickMode(command.side === 'source');
           const label = pairs.find(pair => pair.id === command.pairId)?.label ?? command.pairId;
           status = `Click a point in the ${command.side} viewer for ${label}.`;
+          if (alignment) await showOverlay(alignment);
           break;
         }
         case 'record-pick': {
@@ -361,10 +375,10 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           Object.values(viewers).forEach(viewer => viewer.setControlSensitivity(command.value));
           break;
         case 'reset-view':
-          viewers[command.viewer].resetView();
+          viewers[command.viewer].navigate({ kind: 'reset' });
           break;
         case 'zoom-view':
-          viewers[command.viewer].zoomBy(command.factor);
+          viewers[command.viewer].navigate({ kind: 'zoom', factor: command.factor });
           break;
         case 'export': {
           const problem = exportArtifact(command.artifact);
