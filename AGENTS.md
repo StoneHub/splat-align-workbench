@@ -93,3 +93,17 @@ Read before implementation:
 docs/superpowers/specs/2026-06-14-splat-align-workbench-design.md
 docs/superpowers/plans/2026-06-14-splat-align-workbench.md
 ```
+
+## Agent skills
+
+### Issue tracker
+
+Track work in GitHub Issues for `StoneHub/splat-align-workbench`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default Matt triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context domain layout. See `docs/agents/domain.md`.
