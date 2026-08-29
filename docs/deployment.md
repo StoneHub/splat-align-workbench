@@ -47,13 +47,13 @@ Node version: 20.19.0 or newer
 Production branch: main
 ```
 
-Optional environment variable:
+Reserved environment variable:
 
 ```text
 VITE_ANALYTICS_ENDPOINT=/analytics
 ```
 
-Leave it unset for local-only analytics during development. Set it to a Cloudflare Worker or other collector endpoint when the privacy-safe event pipeline is ready.
+Leave it unset in local and production environments. Enable it only after issue #8 proves project-isolated quota, retention, payload, and fail-closed budget controls.
 
 Repository command checks:
 
@@ -78,7 +78,7 @@ The public app should clearly state:
 - opt-in training contribution is separate and comes later
 - built by Monroe Stone / monroes.space
 
-Public V1 exports a merged target-plus-aligned-source PLY. Session/transform JSON can return later, but should not be documented as a current public output until the UI exposes it again.
+Public V1 requires a Merged PLY as the primary artifact and Alignment session JSON as its companion. The serializer exists, but issue #3 tracks the missing public UI connection. Transform JSON remains internal.
 
 The app only emits allowlisted analytics fields. Do not send raw filenames, full error messages, raw landmarks, screenshots, GPS/location metadata, or splat file contents from the browser.
 
@@ -92,13 +92,13 @@ Vite emits hashed assets under `/assets/*`. Keep `public/_headers` so Cloudflare
 - Friendly entry point: `https://monroes.space/merge`
 - Cloudflare Pages project: `splat-align-workbench`
 - GitHub repo: `StoneHub/splat-align-workbench`
-- Public V1 artifact: merged target-plus-aligned-source PLY
+- Public V1 artifacts: primary Merged PLY plus companion Alignment session JSON; the JSON UI connection remains pending in issue #3
 
 Next:
 
 1. Keep `main` as the launch branch.
 2. Run `npm run test`, `npm run build`, and `npm run smoke:live` before public announcements.
-3. Add a production `VITE_ANALYTICS_ENDPOINT` only after the privacy-safe collector exists.
+3. Keep `VITE_ANALYTICS_ENDPOINT` unset until issue #8 proves the privacy, isolation, retention, and budget gates.
 4. Later: add opt-in training contribution via Cloudflare Workers/R2 or another backend.
 
 ## Alternatives

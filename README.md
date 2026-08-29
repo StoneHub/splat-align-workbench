@@ -1,6 +1,6 @@
 # Splat Align Workbench
 
-Standalone browser workbench for merging Gaussian splats by matching real-world landmarks or stitch guides.
+Standalone browser workbench for merging Gaussian splats by matching real-world landmarks or experimental virtual correspondences.
 
 ## What It Is
 
@@ -9,10 +9,10 @@ Splat Align Workbench is a focused browser tool:
 - load a target PLY and a source PLY from local files
 - inspect them in independent view panels
 - use Overlap Align for shared landmarks
-- use Stitch Adjacent for seam, direction, and plane guides
+- use Experimental Stitch for seam, direction, and plane labels that remain equal-weight virtual correspondence pairs
 - compute a source-to-target similarity transform
 - preview the aligned overlay
-- export a merged target-plus-aligned-source PLY
+- export a merged target-plus-aligned-source PLY and companion alignment session JSON
 
 ## Prior Art
 
@@ -20,7 +20,7 @@ Splat Align Workbench is a focused browser tool:
 
 ## Privacy Boundary
 
-Splat files stay local in the browser by default. Usage analytics track workflow health and performance using coarse buckets and event names. They must not upload splat files, filenames, screenshots, GPS metadata, raw landmarks, or raw error messages.
+Splat files stay local in the browser by default. The app can record privacy-safe workflow events in memory. Outbound analytics stay disabled until this project has an isolated quota, retention policy, and fail-closed budget. Analytics must not upload splat files, filenames, screenshots, GPS metadata, raw landmarks, or raw error messages.
 
 ## Live Deployment
 
@@ -46,15 +46,15 @@ Deploy the current branch manually with:
 npm run deploy:pages
 ```
 
-Optional production analytics can be enabled with `VITE_ANALYTICS_ENDPOINT`. Keep it unset locally; when configured, outbound events are allowlisted before they leave the browser.
+Keep `VITE_ANALYTICS_ENDPOINT` unset in local and production environments. Issue [#8](https://github.com/StoneHub/splat-align-workbench/issues/8) tracks the proof required before outbound collection can be enabled.
 
-The current renderer uses PlayCanvas `gsplat` components for local PLY loading, independent viewer navigation, overlay preview, and depth-buffer world picking. The renderer stays behind a small adapter so the workbench can keep its split-view product flow while adopting more SuperSplat-quality internals over time.
+The current renderer uses PlayCanvas `gsplat` components for local PLY loading, independent viewer navigation, overlay preview, and depth-buffer world picking.
 
 ## Synthetic Fixtures
 
-Use the app's `Load Synthetic Set` button when real splats make picking and navigation too noisy to debug. In Overlap mode it generates a target/source checkerboard scene with five colored tower-cap landmarks. In Stitch mode it generates adjacent road segments with seam, direction, and plane guide markers.
+Use the app's `Load Synthetic Set` button when real splats make picking and navigation too noisy to debug. In Overlap mode it generates a target/source checkerboard scene with five colored tower-cap landmarks. In Experimental Stitch mode it generates adjacent road segments with seam, direction, and plane labels. These labels are virtual corresponding points, not geometric constraints.
 
-`Merged PLY` exports the target splat plus the aligned source splat in one file. This is the primary output of the tool.
+`Merged PLY` exports the target splat plus the aligned source splat in one file. This is the primary output. Alignment session JSON is the required companion artifact; issue [#3](https://github.com/StoneHub/splat-align-workbench/issues/3) tracks its public UI connection.
 
 Large PLY files are processed locally in browser memory. Practical limits depend on the user's machine and browser.
 
