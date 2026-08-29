@@ -1,103 +1,42 @@
-import { analyticsErrorCode, bucketBytes, bucketCount, type AnalyticsProvider } from '../analytics/analytics';
+import { analyticsErrorCode, bucketBytes, bucketCount } from '../analytics/analytics';
 import { canSolveForMode, createPairsForMode, landmarkModeCopy, nextPairForMode, type AlignmentMode } from '../domain/alignmentMode';
 import { completeEnabledPairs, flagResiduals, setLandmarkPoint, toggleLandmark, type LandmarkPair } from '../domain/landmarks';
-import { parsePlyHeader } from '../domain/ply';
-import { createSession, serializeSession } from '../domain/session';
-import { solveSim3, type Sim3Success, type Vec3 } from '../domain/sim3';
+import { solveSim3, type Sim3Success } from '../domain/sim3';
+import { inMemorySplatFile, readSplatArtifact, splatRenderInput, type SplatArtifact, type SplatFileInput, type SplatSide } from '../domain/splatArtifact';
 import { createSyntheticAlignmentFixture, createSyntheticStitchFixture } from '../devFixtures/syntheticSplat';
-import { downloadName, makeDownloadBlob } from '../export/exportSession';
-import { createMergedSplatPlyBuffer } from '../export/exportPlyTransform';
-import type { SplatViewer } from '../rendering/RendererAdapter';
-import { loadSplatCloudFromPly, type SplatCloud, type SplatFileStats } from '../rendering/splatData';
 import { formatSolveStatus } from './solveFeedback';
+import { buildWorkbenchArtifact, type WorkbenchArtifactKind } from './workbenchExport';
+import { cloneAlignment, cloneLandmarkPairs } from './workbenchSnapshot';
+import type { WorkbenchCommand, WorkbenchController, WorkbenchEnvironment, WorkbenchOutcome, WorkbenchProblem, WorkbenchSnapshot } from './workbenchTypes';
 
-export type SplatSide = 'target' | 'source';
-export type ViewerName = SplatSide | 'overlay';
+export type {
+  DownloadAdapter,
+  SplatFileInput,
+  SplatSide,
+  ViewerName,
+  WorkbenchCommand,
+  WorkbenchController,
+  WorkbenchEnvironment,
+  WorkbenchOutcome,
+  WorkbenchProblem,
+  WorkbenchSnapshot
+} from './workbenchTypes';
 
-export interface SplatFileInput {
-  name: string;
-  size: number;
-  arrayBuffer(): Promise<ArrayBuffer>;
+interface LoadedSplat extends SplatArtifact {
+  requestId: number;
 }
 
-export interface DownloadAdapter {
-  save(name: string, blob: Blob): void;
-}
-
-export interface WorkbenchEnvironment {
-  viewers: Record<ViewerName, SplatViewer>;
-  analytics: AnalyticsProvider;
-  downloads: DownloadAdapter;
-  now?: () => Date;
-}
-
-export type WorkbenchCommand =
-  | { kind: 'change-mode'; mode: AlignmentMode }
-  | { kind: 'load-splat'; side: SplatSide; file: SplatFileInput }
-  | { kind: 'load-synthetic' }
-  | { kind: 'select-pair'; pairId: string }
-  | { kind: 'arm-pick'; pairId: string; side: SplatSide }
-  | { kind: 'record-pick'; side: SplatSide; point: Vec3 }
-  | { kind: 'pick-missed'; side: SplatSide }
-  | { kind: 'set-pair-enabled'; pairId: string; enabled: boolean }
-  | { kind: 'add-pair' }
-  | { kind: 'set-control-sensitivity'; value: number }
-  | { kind: 'reset-view'; viewer: ViewerName }
-  | { kind: 'zoom-view'; viewer: ViewerName; factor: number }
-  | { kind: 'export'; artifact: 'merged-ply' | 'session-json' };
-
-export interface LoadedSplatSummary {
-  displayName: string;
-  vertexCount: number;
-}
-
-export interface WorkbenchSnapshot {
-  revision: number;
+interface WorkbenchStateBackup {
   mode: AlignmentMode;
-  splats: Record<SplatSide, LoadedSplatSummary | null>;
-  pairs: readonly LandmarkPair[];
+  splats: Record<SplatSide, LoadedSplat | null>;
+  pairs: LandmarkPair[];
   activePairId: string;
   activeSide: SplatSide;
   alignment: Sim3Success | null;
   status: string;
-  controlSensitivity: number;
-  exports: {
-    mergedPly: boolean;
-    sessionJson: boolean;
-  };
-}
-
-export interface WorkbenchProblem {
-  code: 'workbench-closed' | 'export-unavailable' | 'operation-failed';
-  message: string;
-}
-
-export type WorkbenchOutcome =
-  | { ok: true; snapshot: WorkbenchSnapshot }
-  | { ok: false; snapshot: WorkbenchSnapshot; problem: WorkbenchProblem };
-
-export interface WorkbenchController {
-  current(): WorkbenchSnapshot;
-  execute(command: WorkbenchCommand): Promise<WorkbenchOutcome>;
-  close(): void;
-}
-
-interface LoadedSplat extends LoadedSplatSummary {
-  side: SplatSide;
-  buffer: ArrayBuffer;
-  cloud: SplatCloud;
-  stats: SplatFileStats;
-  requestId: number;
 }
 
 const emptySplats = (): Record<SplatSide, LoadedSplat | null> => ({ target: null, source: null });
-
-const renderInput = (loaded: LoadedSplat) => ({
-  name: loaded.displayName,
-  buffer: loaded.buffer,
-  cloud: loaded.cloud,
-  role: loaded.side
-} as const);
 
 export function createWorkbenchController(environment: WorkbenchEnvironment): WorkbenchController {
   const { viewers, analytics, downloads } = environment;
@@ -105,7 +44,6 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
   const splats = emptySplats();
   const loadRequest = { target: 0, source: 0 };
 
-  let revision = 0;
   let closed = false;
   let mode: AlignmentMode = 'overlap';
   let pairs: LandmarkPair[] = createPairsForMode(mode);
@@ -114,22 +52,30 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
   let alignment: Sim3Success | null = null;
   let status = 'Load target and source splats to begin.';
   let controlSensitivity = 1;
+  let stateRevision = 0;
+  let alignmentRevision = 0;
+  let pendingLoadCount = 0;
+  let loadBackup: WorkbenchStateBackup | null = null;
+  let overlayQueueTail = Promise.resolve();
+  const layerQueueTail: Record<SplatSide, Promise<void>> = {
+    target: Promise.resolve(),
+    source: Promise.resolve()
+  };
 
   analytics.track('session_started', { localFilesOnly: true });
 
   const snapshot = (): WorkbenchSnapshot => {
     const exportReady = Boolean(alignment && splats.target && splats.source);
     return {
-      revision,
       mode,
       splats: {
         target: splats.target ? { displayName: splats.target.displayName, vertexCount: splats.target.vertexCount } : null,
         source: splats.source ? { displayName: splats.source.displayName, vertexCount: splats.source.vertexCount } : null
       },
-      pairs: pairs.map(pair => ({ ...pair })),
+      pairs: cloneLandmarkPairs(pairs),
       activePairId,
       activeSide,
-      alignment,
+      alignment: cloneAlignment(alignment),
       status,
       controlSensitivity,
       exports: { mergedPly: exportReady, sessionJson: exportReady }
@@ -144,15 +90,42 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
     viewers.source.setPickMode(false);
   };
 
-  const showOverlay = async (result: Sim3Success | null) => {
-    await viewers.overlay.setOverlay(
-      splats.target ? { ...renderInput(splats.target), role: 'target' } : null,
-      result && splats.source ? { ...renderInput(splats.source), role: 'source' } : null,
-      result?.transform
-    );
+  const showOverlay = (result: Sim3Success | null): Promise<void> => {
+    const target = splats.target ? splatRenderInput(splats.target) : null;
+    const source = result && splats.source ? splatRenderInput(splats.source) : null;
+    const effect = overlayQueueTail.then(() => viewers.overlay.setOverlay(target, source, result?.transform));
+    overlayQueueTail = effect.catch(() => undefined);
+    return effect;
   };
 
-  const recompute = async () => {
+  const setLayer = (side: SplatSide, input: ReturnType<typeof splatRenderInput> | null): Promise<void> => {
+    const effect = layerQueueTail[side].then(() => viewers[side].setLayer(input));
+    layerQueueTail[side] = effect.catch(() => undefined);
+    return effect;
+  };
+
+  const captureState = (): WorkbenchStateBackup => ({
+    mode,
+    splats: { ...splats },
+    pairs: cloneLandmarkPairs(pairs),
+    activePairId,
+    activeSide,
+    alignment: cloneAlignment(alignment),
+    status
+  });
+
+  const restoreState = (backup: WorkbenchStateBackup) => {
+    mode = backup.mode;
+    splats.target = backup.splats.target;
+    splats.source = backup.splats.source;
+    pairs = cloneLandmarkPairs(backup.pairs);
+    activePairId = backup.activePairId;
+    activeSide = backup.activeSide;
+    alignment = cloneAlignment(backup.alignment);
+    status = backup.status;
+  };
+
+  const recompute = async (expectedRevision: number) => {
     const complete = completeEnabledPairs(pairs);
     alignment = null;
 
@@ -164,6 +137,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
         const residualMap = Object.fromEntries(complete.map((pair, index) => [pair.id, result.residuals[index]]));
         pairs = flagResiduals(pairs, residualMap, Math.max(0.05, result.rmse * 2.5));
         await showOverlay(result);
+        if (expectedRevision !== stateRevision) return;
         status = formatSolveStatus(complete.length, result.rmse, result.warnings);
         analytics.track('alignment_previewed', {
           mode,
@@ -173,70 +147,95 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
         return;
       }
       await showOverlay(null);
+      if (expectedRevision !== stateRevision) return;
       status = result.reason;
       return;
     }
 
     await showOverlay(null);
+    if (expectedRevision !== stateRevision) return;
     const copy = landmarkModeCopy(mode);
     const incomplete = mode === 'overlap' ? `${complete.length}/3 complete pairs. ${copy.incompleteText}` : copy.incompleteText;
     status = splats.target && splats.source ? incomplete : 'Load target and source splats to begin.';
   };
 
-  const restoreLatestLayerAfterStaleLoad = async (side: SplatSide, staleRequestId: number) => {
-    const latest = splats[side];
-    if (latest && latest.requestId !== staleRequestId) {
-      await viewers[side].setLayer(renderInput(latest));
-    }
-  };
-
-  const loadSplat = async (side: SplatSide, file: SplatFileInput, recomputeAfter = true) => {
+  const loadSplat = async (
+    side: SplatSide,
+    file: SplatFileInput,
+    initiatingRevision: number,
+    initiatingAlignmentRevision: number,
+    recomputeAfter = true
+  ) => {
     const requestId = ++loadRequest[side];
-    const buffer = await file.arrayBuffer();
-    if (requestId !== loadRequest[side]) return;
+    let loadRevision = initiatingRevision;
+    let loadAlignmentRevision = initiatingAlignmentRevision;
+    if (pendingLoadCount === 0) loadBackup = captureState();
+    pendingLoadCount += 1;
 
-    const cloud = loadSplatCloudFromPly(buffer);
-    const header = parsePlyHeader(buffer);
-    const loaded: LoadedSplat = {
-      side,
-      displayName: file.name,
-      vertexCount: header.vertexCount,
-      buffer,
-      cloud,
-      requestId,
-      stats: {
-        fileType: file.name.split('.').pop()?.toLowerCase() ?? 'unknown',
-        sizeBytes: file.size,
-        vertexCount: header.vertexCount
+    try {
+      alignment = null;
+      disarmPick();
+      await showOverlay(null);
+
+      const artifact = await readSplatArtifact(side, file);
+      if (requestId !== loadRequest[side]) return;
+      const loaded: LoadedSplat = {
+        ...artifact,
+        requestId,
+      };
+
+      await setLayer(side, splatRenderInput(loaded));
+      if (requestId !== loadRequest[side]) return;
+      splats[side] = loaded;
+      pairs = createPairsForMode(mode);
+      activePairId = pairs[0]?.id ?? 'A';
+      activeSide = 'target';
+      alignment = null;
+      loadRevision = ++stateRevision;
+      loadAlignmentRevision = ++alignmentRevision;
+
+      analytics.track('file_loaded', {
+        role: side,
+        fileType: loaded.stats.fileType,
+        sizeBucket: bucketBytes(loaded.stats.sizeBytes),
+        splatCountBucket: bucketCount(loaded.stats.vertexCount)
+      });
+      if (recomputeAfter) await recompute(loadRevision);
+      loadBackup = captureState();
+    } catch (error) {
+      if (requestId === loadRequest[side] && loadBackup) {
+        const loadStillOwnsState = stateRevision === loadRevision;
+        const loadStillOwnsAlignment = alignmentRevision === loadAlignmentRevision;
+        if (loadStillOwnsAlignment && mode === loadBackup.mode) {
+          if (loadStillOwnsState) {
+            restoreState(loadBackup);
+          } else {
+            splats.target = loadBackup.splats.target;
+            splats.source = loadBackup.splats.source;
+            pairs = cloneLandmarkPairs(loadBackup.pairs);
+            alignment = cloneAlignment(loadBackup.alignment);
+          }
+        } else {
+          splats.target = loadBackup.splats.target;
+          splats.source = loadBackup.splats.source;
+        }
+        await setLayer(side, splats[side] ? splatRenderInput(splats[side]) : null);
+        await showOverlay(alignment);
+        if (loadStillOwnsState) status = error instanceof Error ? error.message : String(error);
       }
-    };
-
-    splats[side] = loaded;
-    await viewers[side].setLayer(renderInput(loaded));
-    if (requestId !== loadRequest[side]) {
-      await restoreLatestLayerAfterStaleLoad(side, requestId);
-      return;
+      if (requestId === loadRequest[side]) throw error;
+    } finally {
+      pendingLoadCount -= 1;
+      if (pendingLoadCount === 0) loadBackup = null;
     }
-
-    analytics.track('file_loaded', {
-      role: side,
-      fileType: loaded.stats.fileType,
-      sizeBucket: bucketBytes(loaded.stats.sizeBytes),
-      splatCountBucket: bucketCount(loaded.stats.vertexCount)
-    });
-    if (recomputeAfter) await recompute();
   };
-
-  const fixtureFile = (name: string, buffer: ArrayBuffer): SplatFileInput => ({
-    name,
-    size: buffer.byteLength,
-    arrayBuffer: async () => buffer.slice(0)
-  });
 
   const loadSynthetic = async () => {
     const fixture = mode === 'stitch' ? createSyntheticStitchFixture() : createSyntheticAlignmentFixture();
-    await loadSplat('target', fixtureFile(fixture.files.target.name, fixture.files.target.buffer), false);
-    await loadSplat('source', fixtureFile(fixture.files.source.name, fixture.files.source.buffer), false);
+    await loadSplat('target', inMemorySplatFile(fixture.files.target.name, fixture.files.target.buffer), stateRevision, alignmentRevision, false);
+    await loadSplat('source', inMemorySplatFile(fixture.files.source.name, fixture.files.source.buffer), stateRevision, alignmentRevision, false);
+    const fixtureRevision = ++stateRevision;
+    alignmentRevision += 1;
     pairs = fixture.manifest.landmarks.map(landmark => {
       const virtual = fixture.manifest.stitch?.correspondences.find(item => item.id === landmark.id);
       return {
@@ -251,49 +250,28 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
     activeSide = 'target';
     alignment = null;
     disarmPick();
-    await recompute();
+    await recompute(fixtureRevision);
+    if (fixtureRevision !== stateRevision) return;
     analytics.track('fixture_loaded', { type: fixture.manifest.fixtureName, mode, landmarkCount: fixture.manifest.landmarks.length });
     status = landmarkModeCopy(mode).syntheticLoadedText;
   };
 
-  const exportArtifact = (artifact: 'merged-ply' | 'session-json'): WorkbenchProblem | null => {
+  const exportArtifact = (artifact: WorkbenchArtifactKind): WorkbenchProblem | null => {
     if (!alignment || !splats.target || !splats.source) {
       return { code: 'export-unavailable', message: 'Load both splats and complete a valid Alignment before export.' };
     }
 
-    const createdAt = now().toISOString();
-    if (artifact === 'merged-ply') {
-      const merged = createMergedSplatPlyBuffer(splats.target.buffer, splats.source.buffer, alignment.transform);
-      downloads.save(
-        downloadName('merged-splats', createdAt, 'ply'),
-        makeDownloadBlob(merged, 'application/octet-stream')
-      );
-      analytics.track('export_completed', { type: 'merged-ply' });
-      return null;
-    }
-
-    const session = createSession({
-      createdAt,
-      target: {
-        fileType: splats.target.stats.fileType,
-        sizeBucket: bucketBytes(splats.target.stats.sizeBytes),
-        splatCountBucket: bucketCount(splats.target.stats.vertexCount)
-      },
-      source: {
-        fileType: splats.source.stats.fileType,
-        sizeBucket: bucketBytes(splats.source.stats.sizeBytes),
-        splatCountBucket: bucketCount(splats.source.stats.vertexCount)
-      },
-      landmarks: pairs,
-      transform: alignment.transform,
-      rmse: alignment.rmse,
-      warnings: alignment.warnings
+    const built = buildWorkbenchArtifact({
+      kind: artifact,
+      createdAt: now().toISOString(),
+      mode,
+      target: splats.target,
+      source: splats.source,
+      pairs,
+      alignment
     });
-    downloads.save(
-      downloadName('splat-align-session', createdAt, 'json'),
-      makeDownloadBlob(serializeSession(session), 'application/json')
-    );
-    analytics.track('export_completed', { type: 'session-json' });
+    downloads.save(built.name, built.blob);
+    analytics.track('export_completed', { type: artifact });
     return null;
   };
 
@@ -302,6 +280,18 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
       return fail({ code: 'workbench-closed', message: 'This workbench is closed.' });
     }
 
+    const commandRevision = ++stateRevision;
+    if (
+      command.kind === 'change-mode' ||
+      command.kind === 'load-splat' ||
+      command.kind === 'load-synthetic' ||
+      command.kind === 'record-pick' ||
+      command.kind === 'set-pair-enabled' ||
+      command.kind === 'add-pair'
+    ) {
+      alignmentRevision += 1;
+    }
+    const commandAlignmentRevision = alignmentRevision;
     try {
       switch (command.kind) {
         case 'change-mode':
@@ -311,11 +301,11 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           activeSide = 'target';
           alignment = null;
           disarmPick();
-          await recompute();
-          analytics.track('alignment_mode_changed', { mode });
+          await recompute(commandRevision);
+          if (commandRevision === stateRevision) analytics.track('alignment_mode_changed', { mode });
           break;
         case 'load-splat':
-          await loadSplat(command.side, command.file);
+          await loadSplat(command.side, command.file, commandRevision, commandAlignmentRevision);
           break;
         case 'load-synthetic':
           await loadSynthetic();
@@ -337,7 +327,8 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           pairs = setLandmarkPoint(pairs, pickedPair, command.side, command.point);
           activeSide = command.side === 'target' ? 'source' : 'target';
           analytics.track('landmark_pair_set', { side: command.side, pairId: pickedPair });
-          await recompute();
+          await recompute(commandRevision);
+          if (commandRevision !== stateRevision) break;
           if (command.side === 'target') {
             viewers.target.setPickMode(false);
             viewers.source.setPickMode(true);
@@ -345,8 +336,10 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
             status = `Click a point in the source viewer for ${label}.`;
           } else {
             disarmPick();
-            const label = pairs.find(pair => pair.id === pickedPair)?.label ?? `Landmark ${pickedPair}`;
-            status = `${label} source point set. ${landmarkModeCopy(mode).sourceCompleteText}`;
+            if (!alignment) {
+              const label = pairs.find(pair => pair.id === pickedPair)?.label ?? `Landmark ${pickedPair}`;
+              status = `${label} source point set. ${landmarkModeCopy(mode).sourceCompleteText}`;
+            }
           }
           break;
         }
@@ -355,7 +348,7 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           break;
         case 'set-pair-enabled':
           pairs = toggleLandmark(pairs, command.pairId, command.enabled);
-          await recompute();
+          await recompute(commandRevision);
           break;
         case 'add-pair': {
           const next = nextPairForMode(mode, pairs);
@@ -379,14 +372,12 @@ export function createWorkbenchController(environment: WorkbenchEnvironment): Wo
           break;
         }
       }
-      revision += 1;
       return succeed();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const area = command.kind === 'export' ? 'export' : command.kind === 'load-splat' || command.kind === 'load-synthetic' ? 'file_load' : 'workbench';
       analytics.track('error_reported', { area, code: analyticsErrorCode(error) });
-      status = message;
-      revision += 1;
+      if (commandRevision === stateRevision) status = message;
       return fail({ code: 'operation-failed', message });
     }
   };

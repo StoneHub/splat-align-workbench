@@ -81,26 +81,26 @@ export function createApp(root: HTMLElement): void {
     (root.querySelector('[data-overlay-label]') as HTMLElement).textContent = snapshot.alignment ? copy.solvedText : copy.needsText;
   };
 
-  const run = async (command: WorkbenchCommand) => {
+  const executeAndRender = async (command: WorkbenchCommand) => {
     const outcome = await controller.execute(command);
     render(outcome.snapshot);
   };
 
-  targetViewer.setPickHandler(point => void run({ kind: 'record-pick', side: 'target', point }));
-  sourceViewer.setPickHandler(point => void run({ kind: 'record-pick', side: 'source', point }));
-  targetViewer.setPickMissHandler(() => void run({ kind: 'pick-missed', side: 'target' }));
-  sourceViewer.setPickMissHandler(() => void run({ kind: 'pick-missed', side: 'source' }));
+  targetViewer.setPickHandler(point => void executeAndRender({ kind: 'record-pick', side: 'target', point }));
+  sourceViewer.setPickHandler(point => void executeAndRender({ kind: 'record-pick', side: 'source', point }));
+  targetViewer.setPickMissHandler(() => void executeAndRender({ kind: 'pick-missed', side: 'target' }));
+  sourceViewer.setPickMissHandler(() => void executeAndRender({ kind: 'pick-missed', side: 'source' }));
 
   root.querySelectorAll<HTMLInputElement>('[data-file-input]').forEach(input => {
     input.addEventListener('change', () => {
       const side = input.dataset.fileInput as SplatSide;
       const file = input.files?.[0];
-      if (file) void run({ kind: 'load-splat', side, file });
+      if (file) void executeAndRender({ kind: 'load-splat', side, file });
     });
   });
 
   root.querySelector<HTMLInputElement>('[data-control-sensitivity]')?.addEventListener('input', event => {
-    void run({ kind: 'set-control-sensitivity', value: Number((event.target as HTMLInputElement).value) });
+    void executeAndRender({ kind: 'set-control-sensitivity', value: Number((event.target as HTMLInputElement).value) });
   });
 
   root.addEventListener('click', event => {
@@ -113,29 +113,29 @@ export function createApp(root: HTMLElement): void {
     const viewAction = target.closest<HTMLButtonElement>('[data-view-action]');
 
     if (modeAction) {
-      void run({ kind: 'change-mode', mode: modeAction.dataset.alignmentMode as 'overlap' | 'stitch' });
+      void executeAndRender({ kind: 'change-mode', mode: modeAction.dataset.alignmentMode as 'overlap' | 'stitch' });
       return;
     }
-    if (selectPair) void run({ kind: 'select-pair', pairId: selectPair.dataset.selectPair as string });
-    if (pickSide) void run({
+    if (selectPair) void executeAndRender({ kind: 'select-pair', pairId: selectPair.dataset.selectPair as string });
+    if (pickSide) void executeAndRender({
       kind: 'arm-pick',
       side: pickSide.dataset.pickSide as SplatSide,
       pairId: pickSide.dataset.pairId as string
     });
-    if (toggle) void run({ kind: 'set-pair-enabled', pairId: toggle.dataset.togglePair as string, enabled: toggle.checked });
-    if (action?.dataset.action === 'add-pair') void run({ kind: 'add-pair' });
-    if (action?.dataset.action === 'load-synthetic') void run({ kind: 'load-synthetic' });
-    if (action?.dataset.action === 'export-ply') void run({ kind: 'export', artifact: 'merged-ply' });
-    if (action?.dataset.action === 'export-session') void run({ kind: 'export', artifact: 'session-json' });
+    if (toggle) void executeAndRender({ kind: 'set-pair-enabled', pairId: toggle.dataset.togglePair as string, enabled: toggle.checked });
+    if (action?.dataset.action === 'add-pair') void executeAndRender({ kind: 'add-pair' });
+    if (action?.dataset.action === 'load-synthetic') void executeAndRender({ kind: 'load-synthetic' });
+    if (action?.dataset.action === 'export-ply') void executeAndRender({ kind: 'export', artifact: 'merged-ply' });
+    if (action?.dataset.action === 'export-session') void executeAndRender({ kind: 'export', artifact: 'session-json' });
     if (viewAction) {
       const viewer = viewAction.dataset.viewTarget as ViewerName;
-      if (viewAction.dataset.viewAction === 'reset') void run({ kind: 'reset-view', viewer });
-      if (viewAction.dataset.viewAction === 'zoom-in') void run({
+      if (viewAction.dataset.viewAction === 'reset') void executeAndRender({ kind: 'reset-view', viewer });
+      if (viewAction.dataset.viewAction === 'zoom-in') void executeAndRender({
         kind: 'zoom-view',
         viewer,
         factor: wheelZoomFactor(-1, controller.current().controlSensitivity)
       });
-      if (viewAction.dataset.viewAction === 'zoom-out') void run({
+      if (viewAction.dataset.viewAction === 'zoom-out') void executeAndRender({
         kind: 'zoom-view',
         viewer,
         factor: wheelZoomFactor(1, controller.current().controlSensitivity)
@@ -143,5 +143,5 @@ export function createApp(root: HTMLElement): void {
     }
   });
 
-  void run({ kind: 'set-control-sensitivity', value: DEFAULT_CONTROL_SENSITIVITY });
+  void executeAndRender({ kind: 'set-control-sensitivity', value: DEFAULT_CONTROL_SENSITIVITY });
 }

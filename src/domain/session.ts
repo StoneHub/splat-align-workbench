@@ -1,3 +1,4 @@
+import type { AlignmentMode } from './alignmentMode';
 import type { LandmarkPair } from './landmarks';
 import type { Sim3Transform } from './sim3';
 
@@ -24,6 +25,7 @@ export interface SplatStats {
 export interface AlignmentSession extends AppAttribution {
   version: 1;
   createdAt: string;
+  mode: AlignmentMode;
   target: SplatStats;
   source: SplatStats;
   landmarks: LandmarkPair[];
@@ -34,6 +36,7 @@ export interface AlignmentSession extends AppAttribution {
 
 export interface CreateSessionInput {
   createdAt?: string;
+  mode: AlignmentMode;
   target: SplatStats;
   source: SplatStats;
   landmarks: LandmarkPair[];
@@ -47,6 +50,7 @@ export function createSession(input: CreateSessionInput): AlignmentSession {
     ...APP_ATTRIBUTION,
     version: 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
+    mode: input.mode,
     target: input.target,
     source: input.source,
     landmarks: input.landmarks,

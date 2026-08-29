@@ -350,9 +350,9 @@ export function createSyntheticAlignmentFixture(): SyntheticAlignmentFixture {
 export function createSyntheticStitchFixture(): SyntheticAlignmentFixture {
   const stitchLandmarks = [
     { id: 'A', name: 'join seam', hint: 'white seam marker where the two road segments touch', kind: 'join' as const, source: [0, 0, 0] as Vec3, color: COLORS.white },
-    { id: 'B', name: 'direction guide', hint: 'cyan arrow point showing source continuation direction', kind: 'direction' as const, source: [1.25, 0, 0] as Vec3, color: COLORS.cyan },
-    { id: 'C', name: 'plane guide left', hint: 'yellow left edge plane marker', kind: 'plane' as const, source: [0.15, 0.85, 0] as Vec3, color: COLORS.yellow },
-    { id: 'D', name: 'plane guide height', hint: 'magenta vertical plane marker', kind: 'plane' as const, source: [0.1, 0, 0.65] as Vec3, color: COLORS.magenta }
+    { id: 'B', name: 'direction guide', hint: 'cyan path sample paired with the matching target path sample', kind: 'direction' as const, source: [1.25, 0, 0] as Vec3, color: COLORS.cyan },
+    { id: 'C', name: 'plane guide left', hint: 'yellow road-edge sample paired with the matching target sample', kind: 'plane' as const, source: [0.15, 0.85, 0] as Vec3, color: COLORS.yellow },
+    { id: 'D', name: 'plane guide height', hint: 'magenta height sample paired with the matching target sample', kind: 'plane' as const, source: [0.1, 0, 0.65] as Vec3, color: COLORS.magenta }
   ] as const;
 
   const sourceSplats: SyntheticSplat[] = [];
