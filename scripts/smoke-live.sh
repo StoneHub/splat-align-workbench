@@ -21,7 +21,7 @@ check_redirect() {
   expected_location="$4"
   headers="$(curl -I --http1.1 --silent --show-error "$url" | tr -d '\r')"
   status="$(printf '%s\n' "$headers" | awk '/^HTTP\// { print $2; exit }')"
-  location="$(printf '%s\n' "$headers" | awk 'BEGIN { IGNORECASE=1 } /^Location:/ { sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit }')"
+  location="$(printf '%s\n' "$headers" | awk 'tolower($0) ~ /^location:/ { sub(/^[^:]*:[[:space:]]*/, ""); print; exit }')"
   if [ "$status" != "$expected_status" ]; then
     printf '%s: expected HTTP %s, got %s\n' "$name" "$expected_status" "${status:-unknown}" >&2
     exit 1
