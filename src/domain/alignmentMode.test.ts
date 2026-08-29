@@ -10,12 +10,12 @@ describe('alignmentMode', () => {
     expect(landmarkModeCopy('overlap').needsText).toBe('Needs 3 matching pairs');
   });
 
-  it('creates stitch rows for join, direction, and plane continuity constraints', () => {
+  it('creates Experimental Stitch rows for labeled virtual correspondences', () => {
     const pairs = createPairsForMode('stitch');
 
     expect(pairs.map(pair => pair.id)).toEqual(['A', 'B', 'C', 'D']);
     expect(pairs.map(pair => pair.label)).toEqual(['Join seam', 'Direction guide', 'Plane guide 1', 'Plane guide 2']);
-    expect(landmarkModeCopy('stitch').needsText).toBe('Needs join, direction, and plane guides');
+    expect(landmarkModeCopy('stitch').needsText).toBe('Needs seam, direction, and plane-labeled pairs');
     expect(nextPairForMode('stitch', pairs)).toMatchObject({
       id: 'E',
       label: 'Plane guide 3',
@@ -24,7 +24,7 @@ describe('alignmentMode', () => {
     });
   });
 
-  it('requires the full stitch constraint set before solving stitch mode', () => {
+  it('requires the full virtual correspondence set before solving Experimental Stitch', () => {
     const complete = createPairsForMode('stitch').map((pair, index) => ({
       ...pair,
       source: [index, index + 1, index + 2] as [number, number, number],

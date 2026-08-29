@@ -34,7 +34,7 @@ export function createAppMarkup(): string {
         <p class="lede" data-mode-lede>Merge two local splats by matching shared landmarks.</p>
         <div class="mode-row" role="group" aria-label="Alignment mode">
           <button data-alignment-mode="overlap" type="button" class="active">Overlap Align</button>
-          <button data-alignment-mode="stitch" type="button">Stitch Adjacent</button>
+          <button data-alignment-mode="stitch" type="button">Experimental Stitch</button>
         </div>
         <div class="fixture-row">
           <button data-action="load-synthetic" type="button">Load Synthetic Set</button>
@@ -51,6 +51,7 @@ export function createAppMarkup(): string {
         <div class="landmark-list" data-landmarks></div>
         <div class="export-row">
           <button data-action="export-ply" type="button" disabled>Merged PLY</button>
+          <button data-action="export-session" type="button" disabled>Session JSON</button>
         </div>
       </aside>
       <section class="overlay-panel">

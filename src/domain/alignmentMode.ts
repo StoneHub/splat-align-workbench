@@ -1,7 +1,7 @@
 import { nextLandmarkId, type LandmarkPair } from './landmarks';
 
 export type AlignmentMode = 'overlap' | 'stitch';
-export type LandmarkConstraintKind = 'match' | 'join' | 'direction' | 'plane';
+export type LandmarkPairKind = 'match' | 'join' | 'direction' | 'plane';
 
 interface LandmarkModeCopy {
   lede: string;
@@ -13,7 +13,7 @@ interface LandmarkModeCopy {
   syntheticLoadedText: string;
 }
 
-const pair = (id: string, label: string, kind: LandmarkConstraintKind): LandmarkPair => ({
+const pair = (id: string, label: string, kind: LandmarkPairKind): LandmarkPair => ({
   id,
   label,
   kind,
@@ -46,7 +46,7 @@ export function nextPairForMode(mode: AlignmentMode, pairs: LandmarkPair[]): Lan
   return pair(id, 'Match point', 'match');
 }
 
-const completeEnabledKindCount = (pairs: LandmarkPair[], kind: LandmarkConstraintKind): number => {
+const completeEnabledKindCount = (pairs: LandmarkPair[], kind: LandmarkPairKind): number => {
   return pairs.filter(item => item.enabled && item.kind === kind && item.source && item.target).length;
 };
 
@@ -62,13 +62,13 @@ export function canSolveForMode(mode: AlignmentMode, pairs: LandmarkPair[]): boo
 export function landmarkModeCopy(mode: AlignmentMode): LandmarkModeCopy {
   if (mode === 'stitch') {
     return {
-      lede: 'Stitch adjacent splats by matching seam, direction, and plane guides.',
-      toolbarTitle: 'Stitch guides',
-      needsText: 'Needs join, direction, and plane guides',
-      incompleteText: 'Pick join, direction, and plane guides on both splats.',
-      solvedText: 'Cyan target + magenta stitched source',
-      sourceCompleteText: 'Guide set. Add more plane guides or export the merged PLY once alignment looks right.',
-      syntheticLoadedText: 'Adjacent road fixture loaded. Pick seam, direction arrow, and plane guide markers.'
+      lede: 'Experimental Stitch matches adjacent scenes with virtual corresponding points, not geometric constraints.',
+      toolbarTitle: 'Virtual correspondences',
+      needsText: 'Needs seam, direction, and plane-labeled pairs',
+      incompleteText: 'Pick seam, direction, and plane-labeled points on both splats.',
+      solvedText: 'Cyan target + magenta aligned source',
+      sourceCompleteText: 'Virtual correspondence set. Add more pairs or export once the Alignment looks right.',
+      syntheticLoadedText: 'Adjacent road fixture loaded. Pick the labeled virtual corresponding points.'
     };
   }
   return {
