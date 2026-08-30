@@ -1,45 +1,46 @@
 import {
   Application,
-  Asset,
   Color,
   Entity,
   FILLMODE_NONE,
   Picker,
-  Quat,
   RESOLUTION_FIXED,
   Vec3 as PcVec3,
   type GSplatComponent
 } from 'playcanvas';
-import type { Mat3, Sim3Transform, Vec3 } from '../domain/sim3';
+import type { Vec3 } from '../domain/sim3';
+import { buildOverlayDiagnosticLines, type DiagnosticLineStyle } from './OverlayDiagnostics';
+import { PlayCanvasSceneStore, type PlayCanvasLayerSpec } from './PlayCanvasSceneStore';
 import { transformedCloud } from './splatData';
-import { createDiagnosticSplatBuffer } from './splatColor';
-import type { SplatRenderInput, SplatViewer } from './RendererAdapter';
+import {
+  ViewerDisposedError,
+  type PickEvent,
+  type SceneReplacement,
+  type SplatViewer,
+  type ViewerNavigation,
+  type ViewerScene
+} from './RendererAdapter';
 
-type LoadedLayer = {
-  asset: Asset;
-  entity: Entity;
-};
-
-type QuaternionWxyz = [number, number, number, number];
 type DragMode = 'orbit' | 'pan';
 
-const roleName = (input: SplatRenderInput): string => `${input.role}-${input.name}`;
 const worldUp: Vec3 = [0, 1, 0];
-const overlayTargetTint = { color: [0.05, 0.9, 1] as [number, number, number], alpha: 0.38 };
-const overlaySourceTint = { color: [1, 0.12, 0.85] as [number, number, number], alpha: 0.44 };
-const overlayTargetBuffers = new WeakMap<ArrayBuffer, ArrayBuffer>();
-const overlaySourceBuffers = new WeakMap<ArrayBuffer, ArrayBuffer>();
-const diagnosticBuffer = (
-  input: ArrayBuffer,
-  cache: WeakMap<ArrayBuffer, ArrayBuffer>,
-  tint: Parameters<typeof createDiagnosticSplatBuffer>[1]
-): ArrayBuffer => {
-  const cached = cache.get(input);
-  if (cached) return cached;
-  const created = createDiagnosticSplatBuffer(input, tint);
-  cache.set(input, created);
-  return created;
+const targetMarkerColor = new Color(0.05, 0.9, 1, 1);
+const sourceMarkerColor = new Color(1, 0.12, 0.85, 1);
+const disabledTargetColor = new Color(0.05, 0.9, 1, 0.28);
+const disabledSourceColor = new Color(1, 0.12, 0.85, 0.28);
+const residualColor = new Color(0.75, 1, 0.12, 0.92);
+const outlierColor = new Color(1, 0.18, 0.12, 1);
+const selectedColor = new Color(1, 1, 1, 1);
+const diagnosticColors: Record<DiagnosticLineStyle, Color> = {
+  target: targetMarkerColor,
+  source: sourceMarkerColor,
+  'disabled-target': disabledTargetColor,
+  'disabled-source': disabledSourceColor,
+  residual: residualColor,
+  outlier: outlierColor,
+  selected: selectedColor
 };
+
 export const DEFAULT_CONTROL_SENSITIVITY = 0.65;
 const MIN_CONTROL_SENSITIVITY = 0.15;
 const MAX_CONTROL_SENSITIVITY = 2.5;
@@ -75,29 +76,7 @@ const vecNormalize = (v: Vec3, fallback: Vec3): Vec3 => {
   if (length < 1e-8) return fallback;
   return [v[0] / length, v[1] / length, v[2] / length];
 };
-
-const mat3ToQuaternion = (m: Mat3): QuaternionWxyz => {
-  const trace = m[0][0] + m[1][1] + m[2][2];
-  if (trace > 0) {
-    const s = Math.sqrt(trace + 1) * 2;
-    return [0.25 * s, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s];
-  }
-  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
-    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;
-    return [(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s];
-  }
-  if (m[1][1] > m[2][2]) {
-    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;
-    return [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s];
-  }
-  const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;
-  return [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s];
-};
-
-const normalizeQuaternion = (q: QuaternionWxyz): QuaternionWxyz => {
-  const length = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
-  return [q[0] / length, q[1] / length, q[2] / length, q[3] / length];
-};
+const toPcVec3 = (v: Vec3): PcVec3 => new PcVec3(v[0], v[1], v[2]);
 
 const clampControlSensitivity = (value: number): number => Math.min(MAX_CONTROL_SENSITIVITY, Math.max(MIN_CONTROL_SENSITIVITY, value));
 
@@ -115,11 +94,11 @@ export function navigationMoveStep(distance: number, dt: number, speedMultiplier
   return baseSpeed * speedMultiplier * clampControlSensitivity(controlSensitivity) * Math.min(dt, 0.05);
 }
 
-const combineBounds = (inputs: SplatRenderInput[]) => {
+const combineBounds = (specs: readonly PlayCanvasLayerSpec[]) => {
   const boundsMin: Vec3 = [Infinity, Infinity, Infinity];
   const boundsMax: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const input of inputs) {
-    const cloud = input.transform ? transformedCloud(input.cloud, input.transform) : input.cloud;
+  for (const spec of specs) {
+    const cloud = spec.transform ? transformedCloud(spec.source.cloud, spec.transform) : spec.source.cloud;
     for (let axis = 0; axis < 3; axis += 1) {
       boundsMin[axis] = Math.min(boundsMin[axis], cloud.boundsMin[axis]);
       boundsMax[axis] = Math.max(boundsMax[axis], cloud.boundsMax[axis]);
@@ -142,10 +121,15 @@ const combineBounds = (inputs: SplatRenderInput[]) => {
 export class PlayCanvasSplatViewer implements SplatViewer {
   private readonly canvas: HTMLCanvasElement;
   private readonly app: Application;
+  private readonly sceneStore: PlayCanvasSceneStore;
   private readonly camera: Entity;
   private readonly picker: Picker;
   private readonly target = new PcVec3();
-  private layers: LoadedLayer[] = [];
+  private readonly pickHandlers = new Set<(event: PickEvent) => void>();
+  private readonly keys = new Set<string>();
+  private readonly listenerAbort = new AbortController();
+  private readonly resizeObserver: ResizeObserver | null;
+  private disposed = false;
   private yaw = 0.72;
   private pitch = -0.32;
   private distance = 3;
@@ -154,13 +138,17 @@ export class PlayCanvasSplatViewer implements SplatViewer {
   private lastX = 0;
   private lastY = 0;
   private dragDistance = 0;
-  private onPick?: (point: Vec3) => void;
-  private onPickMiss?: () => void;
-  private loadToken = 0;
-  private readonly keys = new Set<string>();
-  private lastInputs: SplatRenderInput[] = [];
   private isPickMode = false;
   private controlSensitivity = DEFAULT_CONTROL_SENSITIVITY;
+  private viewportWidth = 0;
+  private viewportHeight = 0;
+  private viewportPixelRatio = 0;
+
+  private readonly handleUpdate = (dt: number) => this.updateKeyboard(dt);
+  private readonly handlePrerender = () => this.drawDiagnostics();
+  private readonly handleWindowResize = () => {
+    if (!this.disposed) this.resizeFromLayout();
+  };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -173,11 +161,11 @@ export class PlayCanvasSplatViewer implements SplatViewer {
       }
     });
     this.app.setCanvasFillMode(FILLMODE_NONE);
-    this.app.setCanvasResolution(RESOLUTION_FIXED);
     this.app.scene.ambientLight.set(0.55, 0.58, 0.64);
     this.app.scene.gsplat.enableIds = true;
     this.app.autoRender = true;
     this.canvas.tabIndex = 0;
+    this.sceneStore = new PlayCanvasSceneStore(this.app);
 
     this.camera = new Entity('camera', this.app);
     this.camera.addComponent('camera', {
@@ -189,226 +177,88 @@ export class PlayCanvasSplatViewer implements SplatViewer {
 
     this.picker = new Picker(this.app, 1, 1, true);
     this.bind();
-    this.resize();
+    this.resizeFromLayout();
     this.updateCamera();
-    this.app.on('update', dt => this.updateKeyboard(dt));
+    this.app.on('update', this.handleUpdate);
+    this.app.on('prerender', this.handlePrerender);
     this.app.start();
+
+    this.resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => {
+          if (!this.disposed) this.resizeFromLayout();
+        });
+    this.resizeObserver?.observe(this.canvas);
   }
 
-  setPickHandler(handler: (point: Vec3) => void): void {
-    this.onPick = handler;
+  async replace(scene: ViewerScene): Promise<SceneReplacement> {
+    this.assertActive();
+    const result = await this.sceneStore.replace(scene);
+    if (result.status === 'applied') {
+      if (result.layersChanged && this.sceneStore.specs.length) this.frame(this.sceneStore.specs);
+      this.app.renderNextFrame = true;
+    }
+    return { status: result.status };
   }
 
-  setPickMissHandler(handler: () => void): void {
-    this.onPickMiss = handler;
+  onPick(handler: (event: PickEvent) => void): () => void {
+    this.assertActive();
+    this.pickHandlers.add(handler);
+    return () => this.pickHandlers.delete(handler);
   }
 
   setPickMode(enabled: boolean): void {
+    this.assertActive();
     this.isPickMode = enabled;
     this.canvas.classList.toggle('pick-mode', enabled);
   }
 
   setControlSensitivity(value: number): void {
+    this.assertActive();
+    if (!Number.isFinite(value)) throw new RangeError('Control sensitivity must be finite.');
     this.controlSensitivity = clampControlSensitivity(value);
   }
 
-  async setLayer(input: SplatRenderInput | null): Promise<void> {
-    await this.setLayers(input ? [input] : []);
-  }
-
-  async setOverlay(target: SplatRenderInput | null, source: SplatRenderInput | null, transform?: Sim3Transform): Promise<void> {
-    const layers: SplatRenderInput[] = [];
-    if (target) {
-      layers.push({
-        ...target,
-        name: `xray-target-${target.name}`,
-        role: 'overlayTarget',
-        buffer: diagnosticBuffer(target.buffer, overlayTargetBuffers, overlayTargetTint)
-      });
+  navigate(command: ViewerNavigation): void {
+    this.assertActive();
+    if (command.kind === 'reset') {
+      if (this.sceneStore.specs.length) this.frame(this.sceneStore.specs);
+      return;
     }
-    if (source && transform) {
-      layers.push({
-        ...source,
-        name: `xray-source-${source.name}`,
-        role: 'overlaySource',
-        buffer: diagnosticBuffer(source.buffer, overlaySourceBuffers, overlaySourceTint),
-        transform
-      });
+    if (!Number.isFinite(command.factor) || command.factor <= 0) {
+      throw new RangeError('Zoom factor must be finite and greater than zero.');
     }
-    await this.setLayers(layers);
+    this.zoomBy(command.factor);
   }
 
   resize(): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const scale = window.devicePixelRatio || 1;
-    const width = Math.max(320, Math.floor(rect.width * scale));
-    const height = Math.max(240, Math.floor(rect.height * scale));
-    this.canvas.width = width;
-    this.canvas.height = height;
-    this.app.setCanvasResolution(RESOLUTION_FIXED, width, height);
-    this.app.resizeCanvas(width, height);
-    this.picker.resize(width, height);
-    this.app.renderNextFrame = true;
+    this.assertActive();
+    this.resizeFromLayout();
   }
 
-  private bind(): void {
-    window.addEventListener('resize', () => this.resize());
-    this.canvas.addEventListener('contextmenu', event => event.preventDefault());
-    this.canvas.addEventListener('pointerdown', event => {
-      this.isDragging = true;
-      this.dragMode = this.isPickMode ? 'orbit' : event.button === 1 || event.button === 2 || event.shiftKey ? 'pan' : 'orbit';
-      this.dragDistance = 0;
-      this.lastX = event.clientX;
-      this.lastY = event.clientY;
-      this.canvas.focus({ preventScroll: true });
-      this.canvas.setPointerCapture(event.pointerId);
-    });
-    this.canvas.addEventListener('pointermove', event => {
-      if (!this.isDragging) return;
-      const dx = event.clientX - this.lastX;
-      const dy = event.clientY - this.lastY;
-      this.dragDistance += Math.hypot(dx, dy);
-      if (this.isPickMode) {
-        // Armed picking treats drag as a no-op so a tiny hand movement does not orbit away from the landmark.
-      } else if (this.dragMode === 'pan') {
-        this.panByPixels(dx, dy);
-      } else {
-        this.yaw -= dx * 0.008 * this.controlSensitivity;
-        this.pitch = Math.min(1.35, Math.max(-1.35, this.pitch + dy * 0.008 * this.controlSensitivity));
-        this.updateCamera();
-      }
-      this.lastX = event.clientX;
-      this.lastY = event.clientY;
-    });
-    this.canvas.addEventListener('pointerup', event => {
-      this.isDragging = false;
-      this.canvas.releasePointerCapture(event.pointerId);
-      if (this.isPickMode && this.dragDistance < 6) {
-        void this.pick(event);
-      }
-    });
-    this.canvas.addEventListener('pointercancel', event => {
-      this.isDragging = false;
-      this.canvas.releasePointerCapture(event.pointerId);
-    });
-    this.canvas.addEventListener('wheel', event => {
-      event.preventDefault();
-      this.canvas.focus({ preventScroll: true });
-      this.zoomBy(wheelZoomFactor(event.deltaY, this.controlSensitivity));
-    }, { passive: false });
-    this.canvas.addEventListener('keydown', event => {
-      if (!keyCodes.has(event.code)) return;
-      event.preventDefault();
-      if (event.code === 'KeyF' && !event.repeat) {
-        this.resetView();
-      }
-      this.keys.add(event.code);
-    });
-    this.canvas.addEventListener('keyup', event => {
-      if (!keyCodes.has(event.code)) return;
-      event.preventDefault();
-      this.keys.delete(event.code);
-    });
-    this.canvas.addEventListener('blur', () => this.keys.clear());
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.listenerAbort.abort();
+    this.resizeObserver?.disconnect();
+    this.pickHandlers.clear();
+    this.keys.clear();
+    this.isDragging = false;
+    this.isPickMode = false;
+    this.canvas.classList.remove('pick-mode');
+    this.app.off('update', this.handleUpdate);
+    this.app.off('prerender', this.handlePrerender);
+    this.sceneStore.dispose();
+    this.picker.destroy();
+    this.app.destroy();
   }
 
-  private async setLayers(inputs: SplatRenderInput[]): Promise<void> {
-    const token = ++this.loadToken;
-    const canReuse = inputs.length === this.layers.length
-      && inputs.every((input, index) => this.lastInputs[index]?.buffer === input.buffer
-        && roleName(this.lastInputs[index]) === roleName(input));
-    if (canReuse) {
-      inputs.forEach((input, index) => this.applyTransform(this.layers[index].entity, input.transform, true));
-      this.lastInputs = inputs;
-      this.frame(inputs);
-      this.app.renderNextFrame = true;
-      return;
-    }
-    this.clearLayers();
-    this.lastInputs = inputs;
-    if (!inputs.length) {
-      this.app.renderNextFrame = true;
-      return;
-    }
-
-    const loaded: LoadedLayer[] = [];
-    try {
-      for (const input of inputs) {
-        const asset = await this.loadAsset(input);
-        if (token !== this.loadToken) {
-          asset.unload();
-          this.app.assets.remove(asset);
-          loaded.forEach(layer => this.disposeLayer(layer));
-          return;
-        }
-        const entity = new Entity(roleName(input), this.app);
-        entity.addComponent('gsplat', {
-          asset,
-          unified: true
-        });
-        this.applyTransform(entity, input.transform);
-        this.app.root.addChild(entity);
-        loaded.push({ asset, entity });
-      }
-    } catch (error) {
-      loaded.forEach(layer => this.disposeLayer(layer));
-      throw error;
-    }
-
-    this.layers = loaded;
-    this.frame(inputs);
-    this.app.renderNextFrame = true;
+  private assertActive(): void {
+    if (this.disposed) throw new ViewerDisposedError();
   }
 
-  private clearLayers(): void {
-    for (const layer of this.layers) {
-      this.disposeLayer(layer);
-    }
-    this.layers = [];
-  }
-
-  private disposeLayer(layer: LoadedLayer): void {
-    layer.entity.destroy();
-    layer.asset.unload();
-    this.app.assets.remove(layer.asset);
-  }
-
-  private loadAsset(input: SplatRenderInput): Promise<Asset> {
-    const response = new Response(input.buffer.slice(0), {
-      headers: { 'content-length': String(input.buffer.byteLength) }
-    });
-    const file = {
-      url: roleName(input).endsWith('.ply') ? roleName(input) : `${roleName(input)}.ply`,
-      filename: input.name,
-      contents: response
-    };
-    const asset = new Asset(roleName(input), 'gsplat', file as never, { reorder: true });
-
-    return new Promise((resolve, reject) => {
-      asset.once('load', () => resolve(asset));
-      asset.once('error', error => reject(error instanceof Error ? error : new Error(String(error))));
-      this.app.assets.add(asset);
-      this.app.assets.load(asset);
-    });
-  }
-
-  private applyTransform(entity: Entity, transform?: Sim3Transform, reset = false): void {
-    if (!transform) {
-      if (reset) {
-        entity.setLocalPosition(0, 0, 0);
-        entity.setLocalRotation(0, 0, 0, 1);
-        entity.setLocalScale(1, 1, 1);
-      }
-      return;
-    }
-    const [w, x, y, z] = normalizeQuaternion(mat3ToQuaternion(transform.rotation));
-    entity.setLocalPosition(transform.translation[0], transform.translation[1], transform.translation[2]);
-    entity.setLocalRotation(new Quat(x, y, z, w));
-    entity.setLocalScale(transform.scale, transform.scale, transform.scale);
-  }
-
-  private frame(inputs: SplatRenderInput[]): void {
-    const { center, radius } = combineBounds(inputs);
+  private frame(specs: readonly PlayCanvasLayerSpec[]): void {
+    const { center, radius } = combineBounds(specs);
     this.target.set(center[0], center[1], center[2]);
     this.distance = Math.max(0.5, radius * 3.2);
     const camera = this.camera.camera;
@@ -419,13 +269,97 @@ export class PlayCanvasSplatViewer implements SplatViewer {
     this.updateCamera();
   }
 
-  resetView(): void {
-    if (this.lastInputs.length) {
-      this.frame(this.lastInputs);
+  private drawDiagnostics(): void {
+    const scene = this.sceneStore.scene;
+    if (this.disposed || scene?.kind !== 'overlay') return;
+    const { right, up } = this.viewBasis();
+    const lines = buildOverlayDiagnosticLines(scene, { right, up, distance: this.distance });
+    const positions: PcVec3[] = [];
+    const colors: Color[] = [];
+    for (const line of lines) {
+      positions.push(toPcVec3(line.start), toPcVec3(line.end));
+      const color = diagnosticColors[line.style];
+      colors.push(color, color);
     }
+
+    if (positions.length) this.app.drawLines(positions, colors, false);
   }
 
-  zoomBy(factor: number): void {
+  private bind(): void {
+    const signal = this.listenerAbort.signal;
+    window.addEventListener('resize', this.handleWindowResize, { signal });
+    this.canvas.addEventListener('contextmenu', event => event.preventDefault(), { signal });
+    this.canvas.addEventListener('pointerdown', event => {
+      this.isDragging = true;
+      this.dragMode = this.isPickMode ? 'orbit' : event.button === 1 || event.button === 2 || event.shiftKey ? 'pan' : 'orbit';
+      this.dragDistance = 0;
+      this.lastX = event.clientX;
+      this.lastY = event.clientY;
+      this.canvas.focus({ preventScroll: true });
+      this.canvas.setPointerCapture(event.pointerId);
+    }, { signal });
+    this.canvas.addEventListener('pointermove', event => {
+      if (!this.isDragging) return;
+      const dx = event.clientX - this.lastX;
+      const dy = event.clientY - this.lastY;
+      this.dragDistance += Math.hypot(dx, dy);
+      if (!this.isPickMode && this.dragMode === 'pan') {
+        this.panByPixels(dx, dy);
+      } else if (!this.isPickMode) {
+        this.yaw -= dx * 0.008 * this.controlSensitivity;
+        this.pitch = Math.min(1.35, Math.max(-1.35, this.pitch + dy * 0.008 * this.controlSensitivity));
+        this.updateCamera();
+      }
+      this.lastX = event.clientX;
+      this.lastY = event.clientY;
+    }, { signal });
+    this.canvas.addEventListener('pointerup', event => {
+      this.isDragging = false;
+      if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+      if (this.isPickMode && this.dragDistance < 6) void this.pick(event);
+    }, { signal });
+    this.canvas.addEventListener('pointercancel', event => {
+      this.isDragging = false;
+      if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+    }, { signal });
+    this.canvas.addEventListener('wheel', event => {
+      event.preventDefault();
+      this.canvas.focus({ preventScroll: true });
+      this.zoomBy(wheelZoomFactor(event.deltaY, this.controlSensitivity));
+    }, { passive: false, signal });
+    this.canvas.addEventListener('keydown', event => {
+      if (!keyCodes.has(event.code)) return;
+      event.preventDefault();
+      if (event.code === 'KeyF' && !event.repeat && this.sceneStore.specs.length) {
+        this.frame(this.sceneStore.specs);
+      }
+      this.keys.add(event.code);
+    }, { signal });
+    this.canvas.addEventListener('keyup', event => {
+      if (!keyCodes.has(event.code)) return;
+      event.preventDefault();
+      this.keys.delete(event.code);
+    }, { signal });
+    this.canvas.addEventListener('blur', () => this.keys.clear(), { signal });
+  }
+
+  private resizeFromLayout(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const width = Math.max(1, Math.floor(rect.width));
+    const height = Math.max(1, Math.floor(rect.height));
+    const pixelRatio = window.devicePixelRatio || 1;
+    if (width === this.viewportWidth && height === this.viewportHeight && pixelRatio === this.viewportPixelRatio) return;
+    this.viewportWidth = width;
+    this.viewportHeight = height;
+    this.viewportPixelRatio = pixelRatio;
+    this.app.graphicsDevice.maxPixelRatio = pixelRatio;
+    this.app.setCanvasResolution(RESOLUTION_FIXED, width, height);
+    this.picker.resize(this.app.graphicsDevice.width, this.app.graphicsDevice.height);
+    this.app.renderNextFrame = true;
+  }
+
+  private zoomBy(factor: number): void {
     this.distance = Math.max(0.0001, this.distance * factor);
     const camera = this.camera.camera;
     if (camera) {
@@ -458,13 +392,13 @@ export class PlayCanvasSplatViewer implements SplatViewer {
 
   private panByPixels(dx: number, dy: number): void {
     const { right, up } = this.viewBasis();
-    const pixelSpan = Math.max(240, Math.min(this.canvas.width, this.canvas.height));
+    const pixelSpan = Math.max(1, Math.min(this.canvas.width, this.canvas.height));
     const scale = (this.distance / pixelSpan) * 1.8 * this.controlSensitivity;
     this.moveTarget(vecAdd(vecScale(right, -dx * scale), vecScale(up, dy * scale)));
   }
 
   private updateKeyboard(dt: number): void {
-    if (!this.keys.size) return;
+    if (this.disposed || !this.keys.size) return;
     const { forward, right, up } = this.viewBasis();
     const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     const slow = this.keys.has('AltLeft') || this.keys.has('AltRight');
@@ -489,7 +423,7 @@ export class PlayCanvasSplatViewer implements SplatViewer {
       changedLook = true;
     }
     if (this.keys.has('ArrowUp')) {
-      this.pitch = Math.min(1.35, this.pitch + lookSpeed);
+      this.pitch = Math.min(1.35, Math.max(-1.35, this.pitch + lookSpeed));
       changedLook = true;
     }
     if (this.keys.has('ArrowDown')) {
@@ -506,8 +440,7 @@ export class PlayCanvasSplatViewer implements SplatViewer {
 
   private updateCamera(): void {
     const [x, y, z] = this.cameraPosition();
-    const position = new PcVec3(x, y, z);
-    this.camera.setPosition(position);
+    this.camera.setPosition(new PcVec3(x, y, z));
     this.camera.lookAt(this.target);
     this.app.renderNextFrame = true;
   }
@@ -522,24 +455,39 @@ export class PlayCanvasSplatViewer implements SplatViewer {
     };
   }
 
+  private emitPick(event: PickEvent): void {
+    [...this.pickHandlers].forEach(handler => handler(event));
+  }
+
   private async pick(event: PointerEvent): Promise<void> {
-    if (!this.onPick || !this.layers.length || !this.camera.camera) {
-      this.onPickMiss?.();
-      return;
-    }
+    const generation = this.sceneStore.generation;
+    if (!this.sceneStore.layers.length || !this.sceneStore.isCurrent(generation) || !this.camera.camera) return;
+    const layers = [...this.sceneStore.layers];
     const { x, y } = this.canvasPoint(event);
-    this.picker.prepare(this.camera.camera, this.app.scene);
-    const selection = await this.picker.getSelectionAsync(Math.max(0, x - 4), Math.max(0, y - 4), 9, 9);
-    const point = await this.picker.getWorldPointAsync(x, y);
-    if (!point) {
-      this.onPickMiss?.();
-      return;
+    try {
+      this.picker.prepare(this.camera.camera, this.app.scene);
+      const selection = await this.picker.getSelectionAsync(Math.max(0, x - 4), Math.max(0, y - 4), 9, 9);
+      if (this.pickIsStale(generation)) return;
+      const point = await this.picker.getWorldPointAsync(x, y);
+      if (this.pickIsStale(generation)) return;
+      if (!point) {
+        this.emitPick({ kind: 'miss' });
+        return;
+      }
+      const selected = selection.find(item => layers.some(layer => layer.entity.gsplat === item as GSplatComponent));
+      if (selection.length > 0 && !selected) {
+        this.emitPick({ kind: 'miss' });
+        return;
+      }
+      this.emitPick({ kind: 'hit', worldPosition: [point.x, point.y, point.z] });
+    } catch {
+      if (!this.pickIsStale(generation)) this.emitPick({ kind: 'miss' });
     }
-    const selected = selection.find(item => this.layers.some(layer => layer.entity.gsplat === item as GSplatComponent));
-    if (selection.length > 0 && !selected && this.layers.length > 1) {
-      this.onPickMiss?.();
-      return;
-    }
-    this.onPick([point.x, point.y, point.z]);
+  }
+
+  private pickIsStale(generation: number): boolean {
+    return this.disposed
+      || !this.isPickMode
+      || !this.sceneStore.isCurrent(generation);
   }
 }

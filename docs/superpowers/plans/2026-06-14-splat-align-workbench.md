@@ -1,5 +1,7 @@
 # Splat Align Workbench Implementation Plan
 
+> **Archived on 2026-08-29:** This is the historical bootstrap plan, not the current execution tracker. Its unchecked boxes do not describe current status. Active work lives in GitHub issues [#1](https://github.com/StoneHub/splat-align-workbench/issues/1) through [#8](https://github.com/StoneHub/splat-align-workbench/issues/8), and accepted product language lives in `AGENTS.md`, `CONTEXT.md`, and the design spec.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a first working standalone browser app that loads two local splat files, lets a user mark matching landmarks, computes a source-to-target transform, previews alignment, and exports session/transform artifacts.

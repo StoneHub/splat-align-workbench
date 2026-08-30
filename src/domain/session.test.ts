@@ -4,6 +4,7 @@ import { createSession, serializeSession } from './session';
 describe('alignment sessions', () => {
   it('round-trips without raw file names or splat data', () => {
     const session = createSession({
+      mode: 'overlap',
       target: { fileType: 'ply', sizeBucket: '100MB-1GB', splatCountBucket: '1M-5M' },
       source: { fileType: 'ply', sizeBucket: '100MB-1GB', splatCountBucket: '1M-5M' },
       landmarks: [],
@@ -14,6 +15,7 @@ describe('alignment sessions', () => {
     const parsed = JSON.parse(json);
 
     expect(parsed.version).toBe(1);
+    expect(parsed.mode).toBe('overlap');
     expect(parsed).toMatchObject({
       appName: 'Splat Align Workbench',
       appUrl: 'https://merge.monroes.space',

@@ -90,6 +90,23 @@ describe('solveSim3', () => {
     expect(result.reason).toContain('collinear');
   });
 
+  it('rejects a full-rank mirrored landmark set', () => {
+    const source: Vec3[] = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+      [2, 1, 3]
+    ];
+    const target: Vec3[] = source.map(([x, y, z]) => [-x + 4, y - 2, z + 7]);
+
+    const result = solveSim3(source, target);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.reason).toContain('mirrored transform');
+  });
+
   it('keeps scale positive and warns on clustered landmark geometry', () => {
     const source: Vec3[] = [
       [2.191101975789722, -0.10069510210091451, 1.5658718745746516],

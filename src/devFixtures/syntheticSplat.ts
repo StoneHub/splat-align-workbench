@@ -32,11 +32,11 @@ export interface SyntheticAlignmentManifest {
     targetOnlyElements: string[];
   };
   stitch?: {
-    constraints: Array<{
+    correspondences: Array<{
       id: string;
       kind: 'join' | 'direction' | 'plane';
       label: string;
-      intent: string;
+      meaning: string;
     }>;
   };
   notes: string[];
@@ -350,9 +350,9 @@ export function createSyntheticAlignmentFixture(): SyntheticAlignmentFixture {
 export function createSyntheticStitchFixture(): SyntheticAlignmentFixture {
   const stitchLandmarks = [
     { id: 'A', name: 'join seam', hint: 'white seam marker where the two road segments touch', kind: 'join' as const, source: [0, 0, 0] as Vec3, color: COLORS.white },
-    { id: 'B', name: 'direction guide', hint: 'cyan arrow point showing source continuation direction', kind: 'direction' as const, source: [1.25, 0, 0] as Vec3, color: COLORS.cyan },
-    { id: 'C', name: 'plane guide left', hint: 'yellow left edge plane marker', kind: 'plane' as const, source: [0.15, 0.85, 0] as Vec3, color: COLORS.yellow },
-    { id: 'D', name: 'plane guide height', hint: 'magenta vertical plane marker', kind: 'plane' as const, source: [0.1, 0, 0.65] as Vec3, color: COLORS.magenta }
+    { id: 'B', name: 'direction guide', hint: 'cyan path sample paired with the matching target path sample', kind: 'direction' as const, source: [1.25, 0, 0] as Vec3, color: COLORS.cyan },
+    { id: 'C', name: 'plane guide left', hint: 'yellow road-edge sample paired with the matching target sample', kind: 'plane' as const, source: [0.15, 0.85, 0] as Vec3, color: COLORS.yellow },
+    { id: 'D', name: 'plane guide height', hint: 'magenta height sample paired with the matching target sample', kind: 'plane' as const, source: [0.1, 0, 0.65] as Vec3, color: COLORS.magenta }
   ] as const;
 
   const sourceSplats: SyntheticSplat[] = [];
@@ -405,16 +405,16 @@ export function createSyntheticStitchFixture(): SyntheticAlignmentFixture {
       ]
     },
     stitch: {
-      constraints: [
-        { id: 'A', kind: 'join', label: 'Join seam', intent: 'source seam point should touch the target seam point' },
-        { id: 'B', kind: 'direction', label: 'Direction guide', intent: 'source continuation direction should follow the target path direction' },
-        { id: 'C', kind: 'plane', label: 'Plane guide 1', intent: 'left road edge keeps the stitched surface from rolling' },
-        { id: 'D', kind: 'plane', label: 'Plane guide 2', intent: 'height marker keeps vertical plane continuity stable' }
+      correspondences: [
+        { id: 'A', kind: 'join', label: 'Join seam', meaning: 'a source seam point corresponding to the target seam point' },
+        { id: 'B', kind: 'direction', label: 'Direction guide', meaning: 'a source path sample corresponding to a target path sample' },
+        { id: 'C', kind: 'plane', label: 'Plane guide 1', meaning: 'a source road-edge sample corresponding to a target road-edge sample' },
+        { id: 'D', kind: 'plane', label: 'Plane guide 2', meaning: 'a source height sample corresponding to a target height sample' }
       ]
     },
     notes: [
       'This fixture has adjacent road segments rather than shared surface overlap.',
-      'Use A as the seam join, B as the direction guide, and C/D as plane continuity guides.',
+      'Use A as the seam pair, B as the direction-labeled pair, and C/D as plane-labeled pairs.',
       'The app should recover the knownSourceToTarget transform and export one continuous merged PLY.'
     ]
   };

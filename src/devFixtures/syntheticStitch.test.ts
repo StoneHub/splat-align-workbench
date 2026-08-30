@@ -10,12 +10,12 @@ const closeVec = (actual: Vec3, expected: Vec3, precision = 5) => {
 };
 
 describe('createSyntheticStitchFixture', () => {
-  it('creates adjacent non-overlapping splats with stitch constraints that recover the known transform', () => {
+  it('creates adjacent splats with virtual correspondences that recover the known transform', () => {
     const fixture = createSyntheticStitchFixture();
 
     expect(fixture.manifest.fixtureName).toBe('adjacent-road-stitch-sim3');
     expect(fixture.manifest.overlap.sharedElements).toEqual([]);
-    expect(fixture.manifest.stitch?.constraints.map(constraint => constraint.kind)).toEqual([
+    expect(fixture.manifest.stitch?.correspondences.map(pair => pair.kind)).toEqual([
       'join',
       'direction',
       'plane',

@@ -2,14 +2,14 @@
 
 ## Goal
 
-Build a public browser app for merging two Gaussian splats by manually matching shared landmarks or adjacent stitch guides. The app should productize a focused standalone workflow between automatic registration tools that fail on hard scenes and manual transform editing in general-purpose splat editors.
+Build a public browser app for merging two Gaussian splats by manually matching shared landmarks or experimental virtual correspondences. The app should productize a focused standalone workflow between automatic registration tools that fail on hard scenes and manual transform editing in general-purpose splat editors.
 
 ## Positioning
 
 Splat Align Workbench is not a replacement for SuperSplat. It focuses on one workflow:
 
 ```text
-Load two splats, identify matching landmarks or stitch guides, compute alignment, preview, export merged PLY.
+Load two splats, identify matching landmarks or experimental virtual correspondences, compute alignment, preview, export merged PLY and session JSON.
 ```
 
 The app should feel like a focused workbench, not a full editor. SuperSplat remains the place for rich editing, cleanup, publishing, and broader scene manipulation.
@@ -50,13 +50,13 @@ Analytics
 1. User opens the site.
 2. User loads a target splat and a source splat from local files.
 3. The app shows two independent viewers side by side.
-4. User navigates each viewer independently to find the same real-world feature or adjacent stitch guide.
-5. User records matching landmark pairs in Overlap mode, or join/direction/plane guide pairs in Stitch mode.
+4. User navigates each viewer independently to find the same real-world feature or a useful adjacent-scene correspondence.
+5. User records matching Landmark pairs in Overlap mode, or seam/direction/plane-labeled Virtual correspondences in Experimental Stitch mode. All labels still contribute equal-weight corresponding points, not geometric constraints.
 6. In Overlap mode, 3 complete matching pairs are required.
-7. In Stitch mode, one join pair, one direction pair, and at least two plane guide pairs are required.
+7. In Experimental Stitch mode, one seam pair, one direction pair, and at least two plane-labeled pairs are required.
 8. Once the mode's required pairs are complete, the app computes a source-to-target transform and unlocks overlay preview.
 9. At 4+ pairs, the app recomputes a best-fit transform after each pair and shows per-point residuals.
-10. User downloads a merged target-plus-aligned-source PLY.
+10. User downloads a Merged PLY and companion Alignment session JSON.
 
 ## Non-Goals For MVP
 
@@ -106,17 +106,18 @@ landmark markers
 residual vectors
 ```
 
-MVP export:
+MVP exports:
 
 ```text
 merged target-plus-aligned-source PLY
+alignment session JSON
 ```
 
-Later export:
+Later export and import:
 
 ```text
 transform JSON
-session JSON
+session JSON import
 deduped/fused merge
 SOG/SPZ export
 ```
@@ -125,13 +126,13 @@ SOG/SPZ export
 
 Splat files stay local in browser memory by default. The app should not upload splat files, filenames, GPS metadata, source media, screenshots, raw landmarks tied to file identity, or raw error messages as part of normal analytics.
 
-Always-on usage analytics are intentional and should be built from day one. Events can include browser/GPU capability, file type, file size bucket, splat count bucket, load time, FPS bucket, landmark count, solve attempts, residual/error bucket, exports, crashes, and feature usage.
+Privacy-safe usage instrumentation is intentional from day one. Events can include browser/GPU capability, file type, file size bucket, splat count bucket, load time, FPS bucket, landmark count, solve attempts, residual/error bucket, exports, crashes, and feature usage. Outbound collection stays disabled until this project has an isolated quota, retention policy, and fail-closed budget. The current app implements only part of this measurement set.
 
 Opt-in training contribution is separate. A later phase can ask users to share anonymized alignment sessions to improve automatic alignment. The opt-in bundle may include anonymized landmark pairs, transforms, residuals, derived/downsampled geometry descriptors, and file stats. Full splat upload requires a separate explicit flow.
 
 ## Roadmap
 
-Phase 1: Manual landmark alignment with local file loading, solver, overlay preview, and merged PLY export.
+Phase 1: Manual landmark alignment with local file loading, solver, overlay preview, Merged PLY export, and companion Alignment session JSON export.
 
 Phase 2: Session import/export, better residual diagnostics, disabled outlier pairs, and support for additional splat formats.
 
@@ -141,13 +142,13 @@ Phase 4: Suggested correspondences and semi-automatic alignment based on collect
 
 Phase 5: Automatic initial alignment with human correction and confidence reporting.
 
-## Open Technical Spike
+## Renderer Direction
 
-Before committing to renderer architecture, inspect PlayCanvas/SuperSplat internals and prove one of these paths:
+The preferred renderer spike is complete: the current app displays two independent local splat viewers and an Overlay preview using separable PlayCanvas splat primitives.
 
 ```text
-Preferred: fresh app using separable PlayCanvas splat rendering primitives
-Fallback: focused app built from SuperSplat internals while preserving narrow UX
+Selected: fresh app using separable PlayCanvas splat rendering primitives
+Deferred fallback: focused app built from SuperSplat internals while preserving narrow UX
 ```
 
-The spike is successful when one page can display two independent local splat viewers and an overlay preview path without importing the full editor UX.
+The renderer seam is declarative: callers replace an `empty`, `single`, or `overlay` scene, while the adapter owns atomic replacement, latest-call-wins stale-load handling, resize observation, picking, and disposal. The Overlay renders target/source Landmark markers, residual vectors, selected-pair emphasis, and outlier emphasis using the same Source-to-Target transform as the Source splat. An in-memory adapter exercises the lifecycle contract independently from PlayCanvas.

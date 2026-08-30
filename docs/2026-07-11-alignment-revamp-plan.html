@@ -18,25 +18,25 @@
 </head>
 <body>
   <h1>Alignment & Code Revamp</h1>
-  <p class="muted">Audit baseline: 2026-07-11 · Product contract: local-first, landmark-driven Sim(3), trustworthy merged PLY.</p>
+  <p class="muted">Audit baseline: 2026-08-29 · Product contract: local-first, landmark-driven Sim(3), primary Merged PLY plus companion Alignment session JSON.</p>
 
   <h2>Alignment verdict</h2>
   <div class="grid">
-    <section class="card done"><span class="tag">Aligned</span><h3>Core solve</h3><p>The source-to-target Horn/Umeyama-style Sim(3) convention is internally consistent, tested for scale, rotation, translation, noise, collinearity, and coplanar warnings.</p></section>
-    <section class="card p1"><span class="tag">Needs work</span><h3>Visual confidence</h3><p>The overlay still lacks landmark markers and residual vectors, so the user cannot inspect correspondence error in 3D.</p></section>
-    <section class="card p1"><span class="tag">Needs decision</span><h3>Stitch semantics</h3><p>Join, direction, and plane guides currently gate the workflow but are solved as equal-weight point pairs. Either implement geometric constraints or explicitly teach them as virtual corresponding points.</p></section>
+    <section class="card done"><span class="tag">Implemented</span><h3>Core solve</h3><p>The source-to-target Alignment uses an explicit 3×3 SVD/Kabsch/Umeyama solve with proper-rotation enforcement and full-rank reflection rejection.</p></section>
+    <section class="card done"><span class="tag">Implemented</span><h3>Visual confidence</h3><p>The overlay renders target/source Landmark markers, residual vectors, selected-pair emphasis, and outlier emphasis using the aligned Source transform.</p></section>
+    <section class="card done"><span class="tag">Implemented</span><h3>Experimental Stitch</h3><p>Seam, direction, and plane labels are Virtual correspondences solved as equal-weight point pairs. They are not geometric constraints.</p></section>
   </div>
 
   <h2>Revamp sequence</h2>
   <table>
     <thead><tr><th>Phase</th><th>Outcome</th><th>Gate</th></tr></thead>
     <tbody>
-      <tr><td>1 — Artifact safety</td><td>Typed vertex layout, controlled input rejection, schema-safe merge, stable repeated preview.</td><td>Implemented in current working tree; unit tests and build pass.</td></tr>
-      <tr><td>2 — Alignment diagnostics</td><td>Render target/source landmarks and residual vectors; expose per-pair selection in overlay.</td><td>Synthetic and real-splat browser QA demonstrate incorrect picks visibly.</td></tr>
-      <tr><td>3 — Workflow core</td><td>Extract a typed workbench controller/state machine from <code>App.ts</code>; inject renderer, analytics, and download ports.</td><td>Interaction tests cover load race/failure, pick progression, solve, mode switch, and export gating.</td></tr>
+      <tr><td>1 — Artifact safety</td><td>Typed vertex layout, controlled input rejection, schema-safe merge, stable repeated preview.</td><td>Verified 2026-08-29 by 65 unit tests and a production build.</td></tr>
+      <tr><td>2 — Alignment diagnostics</td><td>Target/source Landmark markers, residual vectors, outlier color, and selected-pair emphasis render in the Overlay.</td><td>Controller/adapter tests and synthetic PlayCanvas browser smoke pass; real-splat visual QA remains a release check.</td></tr>
+      <tr><td>3 — Workflow core</td><td>A typed workbench-controller module owns mode, load, pick, solve, and export policy; renderer, analytics, download, and clock remain adapters.</td><td>Controller and in-memory adapter tests cover load race/failure, pick progression, solve, mode switch, replacement, resize, teardown, and export gating.</td></tr>
       <tr><td>4 — Large-file export</td><td>Move merged output to a streaming path and define higher-order SH rotation fidelity.</td><td>Real large fixture exports without multi-copy memory spikes; rotated appearance is validated.</td></tr>
-      <tr><td>5 — Public UX</td><td>Responsive layout, accessible file controls/status/canvases, viewer disposal and resize observation.</td><td>Keyboard-only and narrow-viewport browser checks pass.</td></tr>
-      <tr><td>6 — Measurement</td><td>Production analytics config validation plus privacy-safe capability, load-time, FPS, and crash signals.</td><td>Live payload inspection contains allowlisted buckets only.</td></tr>
+      <tr><td>5 — Public UX</td><td>Responsive layout, accessible file controls/status/canvases, viewer disposal and resize observation.</td><td>Resize and disposal are implemented; keyboard-only and narrow-viewport release checks remain.</td></tr>
+      <tr><td>6 — Measurement</td><td>Keep outbound analytics disabled; later add privacy-safe capability, load-time, FPS, and crash signals.</td><td>Issue #8 proves project-isolated quota, retention, fail-closed budget, and allowlisted live payloads first.</td></tr>
     </tbody>
   </table>
 

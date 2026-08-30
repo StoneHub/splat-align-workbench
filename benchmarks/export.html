@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Splat export benchmark</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 52rem; }
+      label { display: block; margin: 1rem 0; }
+      button { padding: 0.6rem 1rem; }
+      pre { background: #111827; color: #e5e7eb; overflow: auto; padding: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Local Merged PLY benchmark</h1>
+    <p>This dev-only route reads both files in this browser tab. It does not upload or download them.</p>
+    <label>Target PLY <input type="file" accept=".ply" data-target /></label>
+    <label>Source PLY <input type="file" accept=".ply" data-source /></label>
+    <button type="button" data-run>Run one export</button>
+    <pre data-results>Waiting for two local files.</pre>
+    <script type="module" src="/src/benchmarks/exportBenchmark.ts"></script>
+  </body>
+</html>
