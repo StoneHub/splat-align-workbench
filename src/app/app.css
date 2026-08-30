@@ -185,10 +185,33 @@ h1 {
 }
 
 .lede {
-  margin: 10px 0 14px;
+  margin: 10px 0 8px;
   color: #8b949e;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.project-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.project-links a {
+  border: 1px solid #30363d;
+  border-radius: 999px;
+  color: #8b949e;
+  padding: 5px 8px;
+  font-size: 11px;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.project-links a:hover,
+.project-links a:focus-visible {
+  border-color: #58a6ff;
+  color: #f0f6fc;
 }
 
 .mode-row {
