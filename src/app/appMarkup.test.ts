@@ -19,5 +19,8 @@ describe('createAppMarkup', () => {
     expect(markup).toContain('>+</button>');
     expect(markup).toContain('Merged PLY');
     expect(markup).toContain('Session JSON');
+    expect(markup).toContain('href="https://monroes.info"');
+    expect(markup).toContain('href="https://github.com/StoneHub/splat-align-workbench"');
+    expect(markup).toContain('aria-label="Project links"');
   });
 });

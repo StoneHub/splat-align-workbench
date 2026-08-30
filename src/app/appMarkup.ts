@@ -32,6 +32,10 @@ export function createAppMarkup(): string {
           <h1>Splat Align</h1>
         </div>
         <p class="lede" data-mode-lede>Merge two local splats by matching shared landmarks.</p>
+        <nav class="project-links" aria-label="Project links">
+          <a href="https://monroes.info" target="_blank" rel="noreferrer">MonroeS.info</a>
+          <a href="https://github.com/StoneHub/splat-align-workbench" target="_blank" rel="noreferrer">GitHub source</a>
+        </nav>
         <div class="mode-row" role="group" aria-label="Alignment mode">
           <button data-alignment-mode="overlap" type="button" class="active">Overlap Align</button>
           <button data-alignment-mode="stitch" type="button">Experimental Stitch</button>
