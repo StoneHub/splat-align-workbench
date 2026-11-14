@@ -95,16 +95,17 @@ Monroe's development runs on Monroe's own hardware. These rules hold for any age
 
 | Work | Runs on | Status |
 | --- | --- | --- |
-| `npm ci`, `npm run test` (vitest), `npm run build` (tsc + vite), lint | `fcfdev`, a Linux ARM server, as a self-hosted GitHub Actions runner in Docker containers | planned, see #11. Today `.github/workflows/ci.yml` runs on GitHub-hosted `ubuntu-latest` for every push and pull request |
+| `npm ci`, `npm run test` (vitest), `npm run build` (tsc + vite), lint | GitHub-hosted `ubuntu-latest` through `.github/workflows/ci.yml`. This repo is public, so those runs are free and spend no quota. Do not move it to a self-hosted runner while the repo is public (see Hard rules) | live |
 | Local iteration (`npm run dev`, tests while editing) | the agent's own sandbox or container, or the dev machine, with `node_modules`, `.vite` and `dist` inside the repo checkout (all gitignored) | live |
 | Browser rendering and GPU checks on real splats | a real browser on real hardware, never a headless run in a shared container, when a number or a visual result is being claimed | live |
 | Deploy (`npm run deploy:pages`, Cloudflare Pages) | manual, run by Monroe | live |
 
 ### Hard rules
 
-- Never spend paid GitHub-hosted runner minutes or any third-party runner service (Blacksmith and the like). The hosted workflow that exists today starts on its own on every push; do not push repeatedly to make it run. Run `npm run test` and `npm run build` locally first, then push once. A docs-only commit may carry `[skip ci]` in its message.
+- Never use paid runners or any third-party runner service (Blacksmith and the like). GitHub-hosted runners are free for this public repo, so the existing workflow is fine. Still run `npm run test` and `npm run build` locally before pushing rather than using CI as the first check.
+- Never attach a self-hosted runner (fcfdev, a Mac, anything of Monroe's) to this repo while it is public. On a public repo anyone can open a pull request from a fork whose workflow then runs their code on that machine. If the repo goes private, the fcfdev Docker runner becomes the CI lane, as in Monroe's other repos.
 - Keep Monroe's main macOS user account clean. The Mac Pro is Monroe's daily machine: no stray caches, global npm installs, or runner state in its home folder. Node comes from `.nvmrc` through nvm, fnm or mise; project dependencies stay in the checkout.
-- Infrastructure is planned until this table says live. Do not change `runs-on`, add runner registrations or Docker files for runners that are not registered yet; propose them on #11 instead. When the fcfdev lane goes live, update this table and `runs-on` in the same PR.
+- Do not change `runs-on` or add runner registrations or Docker runner files without Monroe asking for it, and update this table in the same PR when the CI lane changes.
 - Performance claims need real hardware and a real browser. Say which machine and browser produced every number you report.
 
 ## Required Docs
